@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1e1f23" />
+  <title>튜브폴더</title>
+  <link rel="manifest" href="manager.webmanifest" />
+  <link rel="stylesheet" href="manager.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <button class="icon-btn" id="btn-tree" title="폴더 트리 접기/펴기">☰</button>
+      <strong class="brand">튜브폴더</strong>
+      <div class="toolbar">
+        <button class="tb nav-btn" id="btn-back" title="이전 폴더로 (Alt+←)">◀ 뒤로</button>
+        <button class="tb nav-btn" id="btn-up" title="상위 폴더로 (Backspace)">▲ 상위</button>
+        <span class="sep"></span>
+        <button class="tb" id="btn-new-folder">＋ 새 폴더</button>
+        <button class="tb" id="btn-add-video">🎬 동영상 추가</button>
+        <span class="sep"></span>
+        <div class="menu-wrap">
+          <button class="tb" id="btn-view">보기 ▾</button>
+          <div class="menu hidden" id="menu-view">
+            <button data-view="xl">아주 큰 아이콘</button>
+            <button data-view="large">큰 아이콘</button>
+            <button data-view="medium">보통 아이콘</button>
+            <button data-view="small">작은 아이콘</button>
+            <button data-view="list">목록</button>
+            <button data-view="details">자세히</button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button class="tb" id="btn-sort">정렬 ▾</button>
+          <div class="menu hidden" id="menu-sort">
+            <button data-sort="name">이름</button>
+            <button data-sort="date">수정한 날짜</button>
+            <button data-sort="type">유형</button>
+            <button data-sort="size">크기</button>
+            <button data-sort="none">없음</button>
+            <hr />
+            <button data-dir="asc">오름차순</button>
+            <button data-dir="desc">내림차순</button>
+          </div>
+        </div>
+        <span class="sep"></span>
+        <button class="tb" id="btn-export" title="현재 정리 내용을 파일로 저장">⬆ 내보내기</button>
+        <button class="tb" id="btn-import" title="다른 기기에서 만든 파일 불러오기">⬇ 가져오기</button>
+        <span class="spacer"></span>
+        <input type="search" id="search" placeholder="검색…" />
+      </div>
+    </header>
+
+    <nav class="crumbs" id="crumbs"></nav>
+
+    <div class="workspace">
+      <aside class="tree" id="tree"></aside>
+      <section class="content" id="content" tabindex="0"></section>
+    </div>
+
+    <footer class="statusbar" id="status"></footer>
+  </div>
+
+  <div id="ctxmenu" class="ctxmenu hidden"></div>
+  <input type="file" id="importer" accept="application/json" hidden />
+
+  <!-- ── 폴더 선택 모달 ── -->
+  <div id="modal-folder-picker" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span id="modal-folder-title">폴더를 선택하세요</span>
+        <button class="modal-close" id="modal-folder-cancel">✕</button>
+      </div>
+      <div id="modal-folder-tree" class="modal-tree"></div>
+      <div class="modal-footer">
+        <button class="tb" id="modal-folder-cancel2" onclick="document.getElementById('modal-folder-picker').classList.add('hidden')">취소</button>
+        <button class="tb primary" id="modal-folder-ok" disabled>여기로 이동/복사</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 내보내기 완료 팝업 ── -->
+  <div id="modal-export" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <span>✅ 내보내기 완료</span>
+      </div>
+      <div class="modal-body">
+        <p class="export-filename">📄 파일명: <strong>tubefolder-backup.json</strong></p>
+        <p class="export-path">📂 저장 위치:</p>
+        <div class="export-path-box">
+          크롬 기본 다운로드 폴더<br>
+          <span class="export-path-example">예) C:\Users\<em>사용자이름</em>\Downloads</span>
+        </div>
+        <p class="export-tip">💡 크롬 주소창에 <strong>chrome://downloads</strong> 를 입력하면<br>다운로드된 파일을 바로 확인할 수 있습니다.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="tb primary" id="modal-export-ok">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="storage.js"></script>
+  <script src="app.js"></script>
+  <script src="init.js"></script>
+</body>
+</html>

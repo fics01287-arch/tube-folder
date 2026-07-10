@@ -1,0 +1,199 @@
+:root {
+  --bg: #1e1f23;
+  --panel: #26272c;
+  --panel-2: #2d2f35;
+  --line: #3a3c44;
+  --text: #e7e8ea;
+  --muted: #9aa0a8;
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, .22);
+  --red: #cc0000;
+  --amber: #f4b400;
+  --green: #22c55e;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: "Pretendard", "Segoe UI", system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  font-size: 14px; -webkit-user-select: none; user-select: none;
+}
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.brand { font-size: 16px; letter-spacing: .3px; }
+.toolbar { display: flex; align-items: center; gap: 6px; flex: 1; flex-wrap: wrap; }
+.tb, .icon-btn {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: 13px; white-space: nowrap;
+}
+.tb:hover, .icon-btn:hover { background: #34363d; }
+.tb.primary { background: var(--accent); border-color: var(--accent); color: white; }
+.tb.primary:hover { background: #2563eb; }
+.tb:disabled { opacity: 0.35; cursor: not-allowed; }
+.icon-btn { padding: 6px 9px; }
+.sep { width: 1px; height: 20px; background: var(--line); margin: 0 2px; }
+.spacer { flex: 1; }
+#search {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 7px; padding: 6px 10px; min-width: 140px;
+}
+
+.nav-btn { min-width: 60px; }
+.nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.nav-btn:disabled:hover { background: var(--panel-2); }
+
+.menu-wrap { position: relative; }
+.menu {
+  position: absolute; top: 110%; left: 0; z-index: 50; min-width: 150px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.menu button {
+  display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text);
+  padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.menu button:hover { background: var(--accent-soft); }
+.menu button.checked::before { content: "✓ "; color: var(--accent); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+.hidden { display: none !important; }
+
+.crumbs {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  padding: 7px 14px; background: var(--bg); border-bottom: 1px solid var(--line);
+  color: var(--muted); font-size: 13px;
+}
+.crumbs .crumb { padding: 3px 7px; border-radius: 6px; cursor: pointer; color: var(--text); }
+.crumbs .crumb:hover { background: var(--panel-2); }
+.crumbs .crumb.drop-target { background: var(--accent-soft); outline: 1px dashed var(--accent); }
+.crumbs .chev { color: var(--muted); }
+
+.workspace { display: flex; flex: 1; min-height: 0; }
+.tree { width: 240px; flex-shrink: 0; overflow: auto; padding: 8px; background: var(--panel); border-right: 1px solid var(--line); }
+.tree.collapsed { display: none; }
+.tree .row { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.tree .row:hover { background: var(--panel-2); }
+.tree .row.active { background: var(--accent-soft); }
+.tree .row.drop-target { outline: 1px dashed var(--accent); }
+.tree .twisty { width: 14px; text-align: center; color: var(--muted); }
+.tree .ti { width: 18px; text-align: center; }
+
+.content { flex: 1; overflow: auto; padding: 12px; outline: none; }
+.content.drop-root { background: linear-gradient(transparent, var(--accent-soft)); }
+
+.grid { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 10px; }
+.item { display: flex; flex-direction: column; align-items: center; text-align: center; border: 1px solid transparent; border-radius: 10px; padding: 8px; cursor: default; position: relative; }
+.item:hover { background: var(--panel); }
+.item.selected { background: var(--accent-soft); border-color: var(--accent); }
+.item.drop-target { outline: 2px dashed var(--accent); }
+.item .thumb { display: flex; align-items: center; justify-content: center; background: var(--panel-2); border-radius: 8px; overflow: hidden; color: var(--amber); }
+.item .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.item .label { margin-top: 6px; word-break: break-word; line-height: 1.25; color: var(--text); }
+.item .label input { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--accent); border-radius: 4px; padding: 2px 4px; font: inherit; text-align: center; }
+.item .badge-music { position: absolute; top: 6px; right: 6px; font-size: 11px; }
+
+.view-xl     .item { width: 180px; } .view-xl     .thumb { width: 160px; height: 110px; font-size: 64px; }
+.view-large  .item { width: 130px; } .view-large  .thumb { width: 112px; height: 78px;  font-size: 46px; }
+.view-medium .item { width: 104px; } .view-medium .thumb { width: 86px;  height: 60px;  font-size: 36px; }
+.view-small  .item { width: 84px;  } .view-small  .thumb { width: 64px;  height: 44px;  font-size: 26px; }
+.view-xl .label, .view-large .label { font-size: 13px; }
+.view-medium .label, .view-small .label { font-size: 12px; }
+
+.view-list .grid { flex-direction: column; flex-wrap: nowrap; gap: 2px; }
+.view-list .item { flex-direction: row; width: 100%; max-width: 520px; padding: 5px 8px; gap: 10px; align-items: center; text-align: left; }
+.view-list .thumb { width: 28px; height: 20px; font-size: 16px; flex-shrink: 0; }
+.view-list .label { margin-top: 0; }
+
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); font-weight: normal; }
+.table th { color: var(--muted); cursor: pointer; position: sticky; top: 0; background: var(--bg); }
+.table th:hover { color: var(--text); }
+.table th .arrow { font-size: 10px; }
+.table tr.row { cursor: default; }
+.table tr.row:hover { background: var(--panel); }
+.table tr.row.selected { background: var(--accent-soft); }
+.table tr.row.drop-target td { outline: 2px dashed var(--accent); }
+.table td.name { display: flex; align-items: center; gap: 8px; }
+.table td.name .ti { color: var(--amber); }
+.table td.name img { width: 36px; height: 24px; object-fit: cover; border-radius: 4px; }
+.table .col-muted { color: var(--muted); }
+
+.item.is-trash .thumb, .tree .row.is-trash .ti { color: var(--muted); }
+
+.ctxmenu { position: fixed; z-index: 100; min-width: 200px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.ctxmenu button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 7px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.ctxmenu button:hover { background: var(--accent-soft); }
+.ctxmenu button.danger:hover { background: rgba(204,0,0,.3); }
+.ctxmenu button:disabled { color: var(--muted); opacity: .5; cursor: default; }
+.ctxmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+
+.statusbar { padding: 5px 14px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; display: flex; gap: 16px; }
+.empty-hint { color: var(--muted); padding: 40px; text-align: center; }
+.item.cut, .table tr.row.cut { opacity: .45; }
+.marquee { position: fixed; z-index: 90; pointer-events: none; border: 1px solid var(--accent); background: var(--accent-soft); }
+
+/* ════════════════════════════════════════════
+   모달 공통
+   ════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.65);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  width: 380px; max-width: 94vw; max-height: 80vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  overflow: hidden;
+}
+.modal-box-sm { width: 340px; }
+.modal-header {
+  padding: 16px 18px 14px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 15px; font-weight: 700; color: var(--text);
+}
+.modal-close { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+.modal-close:hover { color: var(--text); background: var(--panel-2); }
+.modal-footer { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; }
+.modal-body { padding: 16px 18px; font-size: 14px; }
+
+/* ── 폴더 선택 트리 ── */
+.modal-tree {
+  flex: 1; overflow-y: auto; padding: 8px 4px;
+  min-height: 120px; max-height: 340px;
+}
+.fp-row {
+  padding: 8px 12px; border-radius: 7px; cursor: pointer;
+  color: var(--text); font-size: 13px; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+}
+.fp-row:hover { background: var(--panel-2); }
+.fp-row.fp-sel { background: var(--accent-soft); border: 1px solid var(--accent); }
+
+/* ── 내보내기 완료 팝업 ── */
+.export-filename { margin-bottom: 10px; font-size: 14px; }
+.export-path { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+.export-path-box {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 14px;
+  font-size: 13px; color: var(--text); margin-bottom: 12px; line-height: 1.8;
+}
+.export-path-example { color: var(--muted); font-size: 12px; }
+.export-path-example em { color: var(--accent); font-style: normal; }
+.export-tip { font-size: 12px; color: var(--muted); line-height: 1.7; background: rgba(59,130,246,.08); border-radius: 6px; padding: 8px 10px; }
+.export-tip strong { color: var(--accent); }
+
+@media (max-width: 760px) {
+  .tree { position: absolute; z-index: 40; height: 100%; }
+  .tree.collapsed { display: none; }
+  .tb { padding: 8px 10px; font-size: 13px; }
+  #search { min-width: 100px; }
+  .view-xl .item, .view-large .item { width: 44%; }
+  .view-xl .thumb, .view-large .thumb { width: 100%; height: 96px; }
+}
