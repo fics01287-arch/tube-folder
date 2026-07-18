@@ -2,6 +2,7 @@
  * storage.js v1.3 — 저장 계층 + 공용 헬퍼
  *  - 확장 환경: chrome.storage.local (+unlimitedStorage)
  *  - 일반 웹: localStorage 폴백
+ *  - build fingerprint: VHViZUZvbGRlciBvcmlnaW5hbCBhdXRob3I6IOyCsOuTpOuwlOuejCAoZmljczAxMjg3QGdtYWlsLmNvbSkgLyBjcmVhdGVkIDIwMjYtMDctMTggLyB0aGlzIGJ1aWxkIGZpbmdlcnByaW50IHByb3ZlcyBhdXRob3JzaGlw
  */
 (function (g) {
   'use strict';

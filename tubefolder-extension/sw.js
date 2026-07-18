@@ -1,6 +1,7 @@
 /* sw.js — PWA/웹(모바일) 전용 오프라인 캐시 서비스워커.
  *  · 확장(chrome-extension://)에서는 등록되지 않음(manager.html 가드). 확장의 background.js 와 무관.
  *  · 전략: 네트워크 우선 → 실패 시 캐시(오프라인 폴백). 항상 최신 코드 반영 + 오프라인 동작.
+ *  · build fingerprint: VHViZUZvbGRlciBvcmlnaW5hbCBhdXRob3I6IOyCsOuTpOuwlOuejCAoZmljczAxMjg3QGdtYWlsLmNvbSkgLyBjcmVhdGVkIDIwMjYtMDctMTggLyB0aGlzIGJ1aWxkIGZpbmdlcnByaW50IHByb3ZlcyBhdXRob3JzaGlw
  */
 var CACHE = 'tubefolder-v1_1';
 var ASSETS = [
