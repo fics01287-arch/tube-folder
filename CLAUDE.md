@@ -3,11 +3,15 @@
 ## 프로젝트 목표
 유튜브 영상을 폴더로 정리하고 드래그앤드롭·정렬 기능을 제공하는 Chrome 확장 프로그램.
 
-## 기술 스택
-- 언어: TypeScript
-- 프레임워크: React
-- 빌드 도구: Vite + CRX
-- 형태: Chrome 확장 프로그램 (Manifest V3)
+## 프로젝트 구조
+- `tubefolder-extension-v1/` : 완성·배포된 버전1. 건드리지 않음(배포 유지 목적).
+- `tubefolder-extension-v2/` : 버전2 개발 폴더. 설계·기술 스택 아직 미정.
+
+## 기술 스택 (v1 기준)
+- 언어: 순수 JavaScript (TypeScript 아님)
+- 프레임워크: 없음 (React 등 프레임워크 미사용, 빌드 도구 없이 순수 HTML/CSS/JS)
+- 배포: 폴더를 그대로 zip 압축 → Chrome 확장(Manifest V3) 또는 GitHub Pages(PWA)로 배포
+- v2 기술 스택·프레임워크는 아직 결정되지 않음 — 착수 전 사용자 확인 필요
 
 ## 핵심 기능
 - 유튜브 영상 폴더 관리
@@ -15,11 +19,9 @@
 - 폴더별 정렬 기능
 - 유튜브 페이지 내 자연스러운 UI 통합
 
-## 알려진 이슈 (작업 이력)
-- MutationObserver 범위가 너무 넓어 성능 저하 발생
-- Shadow DOM 재귀 탐색 비용 과다
-- 6초마다 강제 전체 리스캔 문제
-- 수정 대상 파일: playlistAddButton.ts, playlistCardScan.ts, playlistDom.ts
+## 알려진 이슈
+- (2026-07-19 확인) 과거 이 섹션에 있던 "MutationObserver 범위 과다·Shadow DOM 재귀 비용·6초 강제 리스캔" 문제와 `playlistAddButton.ts` 등 언급된 파일은 저장소 전체(git 히스토리 포함)에 존재하지 않음을 확인해 제거함. 다른 프로젝트 계획 당시 내용이 잘못 섞여 있던 것으로 추정.
+- 실제 성능 문제가 재현되면 증상·재현 조건·수정 대상 파일을 이 섹션에 다시 기록할 것.
 
 ## 완전 자율 코딩 및 진화 원칙
 
