@@ -1,0 +1,28 @@
+{
+  "name": "tubefolder-extension-v2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "튜브폴더 v2 — React + TypeScript + Vite 기반 MV3 크롬 확장",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build:manager": "vite build",
+    "build:background": "vite build --config vite.background.config.ts",
+    "build:content": "vite build --config vite.content.config.ts",
+    "build": "npm run typecheck && npm run build:manager && npm run build:background && npm run build:content",
+    "package": "npm run build && powershell -NoProfile -Command \"Compress-Archive -Path dist/* -DestinationPath ../tubefolder-extension-v2.zip -Force\""
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

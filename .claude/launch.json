@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["_preview_server.js"],
       "port": 8731
+    },
+    {
+      "name": "tubefolder-v2-manager",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "tubefolder-extension-v2", "run", "dev", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
     }
   ]
 }
