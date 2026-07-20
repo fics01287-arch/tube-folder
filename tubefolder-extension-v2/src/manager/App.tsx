@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { load } from '../storage/storage';
-import { createFolder, renameFolder, trashFolder } from '../storage/folderOps';
+import { addVideosToFolder, createFolder, renameFolder, trashFolder } from '../storage/folderOps';
+import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
 import type { TubeNode, TubeStoreData } from '../storage/types';
 
 // 매니저 페이지 최소 스캐폴딩.
@@ -24,6 +25,9 @@ export default function App() {
   const [editingValue, setEditingValue] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [playlistUrl, setPlaylistUrl] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -96,6 +100,43 @@ export default function App() {
     }
   }
 
+  async function handleImportPlaylist() {
+    setError(null);
+    if (!currentFolderId || importing) return;
+
+    const playlistId = extractPlaylistId(playlistUrl);
+    if (!playlistId) {
+      setError('올바른 재생목록 URL(또는 재생목록 ID)이 아닙니다.');
+      return;
+    }
+
+    setImporting(true);
+    setImportStatus('재생목록 불러오는 중...');
+    try {
+      const videos = await fetchPlaylistVideos(playlistId, (p) =>
+        setImportStatus(`영상 목록을 가져오는 중... (${p.fetched}개 인식됨)`)
+      );
+      setImportStatus(`폴더에 추가하는 중... (${videos.length}개)`);
+      const result = await addVideosToFolder(
+        currentFolderId,
+        videos.map((v) => ({
+          url: `https://www.youtube.com/watch?v=${v.videoId}`,
+          videoId: v.videoId,
+          title: v.title,
+          channel: v.channel
+        }))
+      );
+      setPlaylistUrl('');
+      await refresh(currentFolderId);
+      setImportStatus(`완료: ${result.added}개 추가됨, ${result.skipped}개는 이미 있어 건너뜀`);
+    } catch (e) {
+      setImportStatus(null);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   if (!store || !currentFolder) {
     return (
       <div className="tf-app">
@@ -144,6 +185,26 @@ export default function App() {
           </button>
         </div>
       ) : null}
+
+      {currentFolder.id !== store.trashId ? (
+        <div className="tf-import-playlist">
+          <input
+            className="tf-input"
+            value={playlistUrl}
+            onChange={(e) => setPlaylistUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleImportPlaylist();
+            }}
+            placeholder="유튜브 재생목록 URL 붙여넣기 (이 폴더로 가져오기)"
+            disabled={importing}
+          />
+          <button className="tf-btn" onClick={handleImportPlaylist} disabled={importing || !playlistUrl.trim()}>
+            {importing ? '가져오는 중...' : '📥 재생목록 가져오기'}
+          </button>
+        </div>
+      ) : null}
+
+      {importStatus && <div className="tf-import-status">{importStatus}</div>}
 
       {error && <div className="tf-error-banner">{error}</div>}
 

@@ -80,6 +80,78 @@ export async function renameFolder(folderId: string, newName: string): Promise<F
   return folder;
 }
 
+export interface ImportVideoInput {
+  url: string;
+  videoId: string;
+  title?: string;
+  channel?: string;
+  kind?: 'video' | 'music';
+}
+
+export interface ImportVideosResult {
+  added: number;
+  skipped: number;
+}
+
+/**
+ * 재생목록 일괄 가져오기 전용 — 여러 영상을 한 번의 load/save로 폴더에 추가.
+ * videoId가 저장소 전체(트리 전역, 휴지통 포함) 어딘가에 이미 있으면 건너뛴다.
+ * addVideoToFolder(storage.ts)를 반복 호출하지 않는 이유: 호출마다 load+save가 일어나
+ * 영상 수가 많은 재생목록에서는 왕복이 그대로 배가되기 때문.
+ */
+export async function addVideosToFolder(folderId: string, videos: ImportVideoInput[]): Promise<ImportVideosResult> {
+  const data = await load();
+
+  let targetId = folderId;
+  const target = data.nodes[targetId];
+  if (!target || target.type !== 'folder' || targetId === data.trashId) {
+    targetId = data.rootId;
+  }
+
+  const existingVideoIds = new Set<string>();
+  for (const k in data.nodes) {
+    const n = data.nodes[k];
+    if (n.type === 'video' && n.videoId) existingVideoIds.add(n.videoId);
+  }
+
+  const siblings = childrenOf(data, targetId).filter((n) => n.id !== data.trashId);
+  let order = nextOrder(data, targetId);
+  const t = now();
+  let added = 0;
+  let skipped = 0;
+
+  for (const v of videos) {
+    if (existingVideoIds.has(v.videoId)) {
+      skipped++;
+      continue;
+    }
+    const id = uid();
+    const title = v.title || v.url;
+    const node: TubeNode = {
+      id,
+      type: 'video',
+      parentId: targetId,
+      name: uniqueName(siblings, title),
+      videoId: v.videoId,
+      url: v.url,
+      thumb: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
+      kind: v.kind || 'video',
+      channel: v.channel || '',
+      duration: 0,
+      createdAt: t,
+      modifiedAt: t,
+      order: order++
+    };
+    data.nodes[id] = node;
+    siblings.push(node);
+    existingVideoIds.add(v.videoId);
+    added++;
+  }
+
+  if (added > 0) await save(data);
+  return { added, skipped };
+}
+
 /** 폴더(+하위 트리 전체)를 휴지통으로 이동. 완전삭제가 아니라 소프트 삭제(ALGORITHMS.md trashNodes와 동일). */
 export async function trashFolder(folderId: string): Promise<void> {
   const data = await load();

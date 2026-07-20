@@ -56,6 +56,18 @@ body {
   margin-bottom: 16px;
 }
 
+.tf-import-playlist {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tf-import-status {
+  font-size: 12px;
+  color: #8ab4f8;
+  margin-bottom: 12px;
+}
+
 .tf-input {
   flex: 1;
   background: #1f1f1f;
