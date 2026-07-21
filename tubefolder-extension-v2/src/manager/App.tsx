@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { load } from '../storage/storage';
 import { addVideosToFolder, createFolder, renameFolder, trashFolder } from '../storage/folderOps';
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
-import type { TubeNode, TubeStoreData } from '../storage/types';
+import { isVideo } from '../storage/types';
+import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
+import PlayerOverlay from './PlayerOverlay';
 
 // 매니저 페이지 최소 스캐폴딩.
 // 목록형·방사형·개요보기 같은 본격 뷰(그리드/가상 스크롤/드래그앤드롭)는 5단계 별도 작업.
@@ -28,6 +30,7 @@ export default function App() {
   const [playlistUrl, setPlaylistUrl] = useState('');
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [playingVideo, setPlayingVideo] = useState<VideoNode | null>(null);
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -98,6 +101,21 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  function handleVideoClick(node: TubeNode) {
+    setError(null);
+    if (!isVideo(node)) return;
+    if (!node.videoId) {
+      setError('이 영상은 재생할 수 없습니다 (videoId를 확인할 수 없음).');
+      return;
+    }
+    setPlayingVideo(node);
+  }
+
+  async function handleClosePlayer() {
+    setPlayingVideo(null);
+    await refresh(currentFolderId); // 재생 위치(lastPosition) 갱신을 store에 반영
   }
 
   async function handleImportPlaylist() {
@@ -241,7 +259,13 @@ export default function App() {
                   </button>
                 )
               ) : (
-                <span className="tf-row-name tf-row-name-video">🎬 {node.name}</span>
+                <button
+                  className="tf-row-name tf-row-name-video"
+                  onClick={() => handleVideoClick(node)}
+                  title={isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
+                >
+                  🎬 {node.name}
+                </button>
               )}
 
               {isFolder && !isTrash && editingId !== node.id && deletingId === node.id && (
@@ -277,6 +301,8 @@ export default function App() {
           );
         })}
       </ul>
+
+      {playingVideo && <PlayerOverlay key={playingVideo.id} video={playingVideo} onClose={handleClosePlayer} />}
     </div>
   );
 }

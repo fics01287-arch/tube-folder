@@ -37,6 +37,10 @@ export interface VideoNode extends BaseNode {
   channel: string;
   /** 재생시간(초). 현재 메타 미수집 시 0 (ROADMAP 4단계 "duration 정밀 수집" 과제) */
   duration: number;
+  /** 이어보기: 마지막 저장된 재생 위치(초). 없으면 처음부터 재생(하위호환 optional, 마이그레이션 불필요) */
+  lastPosition?: number;
+  /** 이어보기: 마지막으로 재생을 멈추거나 닫은 시각(ms epoch). modifiedAt/version과는 분리(touch() 미적용 — ALGORITHMS 참고) */
+  lastWatchedAt?: number;
 }
 
 export type TubeNode = FolderNode | VideoNode;

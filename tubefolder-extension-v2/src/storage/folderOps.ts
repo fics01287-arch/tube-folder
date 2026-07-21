@@ -2,7 +2,7 @@
 // app.js의 조작함수에 위임했음). 우클릭 메뉴에서 탭 전환 없이 바로 처리하기 위해 저장 계층에
 // 캡슐화한다. 데이터 구조·불변식(DATA-MODEL.md I1~I8)은 그대로 — 새 진입점만 추가.
 
-import type { FolderNode, TubeNode, TubeStoreData } from './types';
+import type { FolderNode, TubeNode, TubeStoreData, VideoNode } from './types';
 import { load, save, now, uid, uniqueName, newNodeMeta, touch } from './storage';
 
 function childrenOf(data: TubeStoreData, parentId: string): TubeNode[] {
@@ -154,6 +154,29 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
 
   if (added > 0) await save(data);
   return { added, skipped };
+}
+
+/**
+ * 이어보기 재생 위치 저장 — 5~10초 간격으로 백그라운드에서 자주 호출되는 고빈도 쓰기라
+ * touch()(version/deviceId/modifiedAt 갱신)를 태우지 않는다: 재생 진행을 "수정"으로 취급하면
+ * ①이름순이 아닌 "수정일" 정렬이 재생할 때마다 사용자가 손대지 않았는데도 바뀌고
+ * ②3단계 동기화 병합 로직이 실제 구조 변경과 단순 재생 진행을 구분 못 하게 됨.
+ * 그래서 lastPosition/lastWatchedAt만 갈아 끼우는 전용 경량 헬퍼로 분리한다.
+ */
+export async function updatePlaybackPosition(videoId: string, position: number): Promise<void> {
+  const data = await load();
+  let target: VideoNode | undefined;
+  for (const k in data.nodes) {
+    const n = data.nodes[k];
+    if (n.type === 'video' && n.videoId === videoId) {
+      target = n;
+      break;
+    }
+  }
+  if (!target) return; // 재생 중 폴더 이동/삭제 등으로 노드가 사라졌으면 조용히 무시
+  target.lastPosition = position;
+  target.lastWatchedAt = now();
+  await save(data);
 }
 
 /** 폴더(+하위 트리 전체)를 휴지통으로 이동. 완전삭제가 아니라 소프트 삭제(ALGORITHMS.md trashNodes와 동일). */
