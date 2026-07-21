@@ -6,7 +6,11 @@
 import type { FolderNode, TubeNode, TubeStoreData } from './types';
 
 const KEY = 'tubefolder_v1';
-const DATA_VERSION = 1;
+// v1(=1)에서 노드에 schemaVersion·deviceId·version 동기화 메타데이터 필드를 추가하며 2로 상향
+// (v1 AGENTS.md 규칙: "저장 키나 노드 스키마를 바꾸면 migrate()에 변환 추가 + DATA_VERSION 상향").
+// 노드별 schemaVersion 필드도 이 값을 그대로 재사용한다(스토어 스키마 세대와 노드 스키마 세대는 항상 같이 움직이므로 별도 상수를 두지 않음).
+const DATA_VERSION = 2;
+const DEVICE_ID_KEY = 'tubefolder_device_id';
 
 function hasChromeStorage(): boolean {
   return typeof chrome !== 'undefined' && !!chrome.storage && !!chrome.storage.local;
@@ -20,14 +24,61 @@ export function uid(): string {
   return 'n_' + Math.random().toString(36).slice(2, 10) + now().toString(36).slice(-4);
 }
 
-export function emptyStore(): TubeStoreData {
+function genId(prefix: string): string {
+  return prefix + '_' + Math.random().toString(36).slice(2, 10) + now().toString(36).slice(-4);
+}
+
+let cachedDeviceId: string | null = null;
+
+/** 이 브라우저/기기의 영구 식별자. 최초 호출 시 생성해 저장소에 남기고 이후엔 그대로 재사용한다(3단계 동기화 병합 대비). */
+export async function getDeviceId(): Promise<string> {
+  if (cachedDeviceId) return cachedDeviceId;
+  if (hasChromeStorage()) {
+    const o = await chrome.storage.local.get(DEVICE_ID_KEY);
+    let id = o[DEVICE_ID_KEY] as string | undefined;
+    if (!id) {
+      id = genId('d');
+      await chrome.storage.local.set({ [DEVICE_ID_KEY]: id });
+    }
+    cachedDeviceId = id;
+    return id;
+  }
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = genId('d');
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    cachedDeviceId = id;
+    return id;
+  } catch {
+    cachedDeviceId = genId('d');
+    return cachedDeviceId;
+  }
+}
+
+/** 새 노드 생성 시 채워 넣을 스키마·동기화 메타데이터(신규 노드는 항상 version 1부터 시작) */
+export async function newNodeMeta(): Promise<{ schemaVersion: number; deviceId: string; version: number }> {
+  return { schemaVersion: DATA_VERSION, deviceId: await getDeviceId(), version: 1 };
+}
+
+/** 기존 노드를 수정할 때 modifiedAt·version·deviceId·schemaVersion을 한 번에 갱신(제자리 수정) */
+export async function touch(node: TubeNode): Promise<void> {
+  node.modifiedAt = now();
+  node.version = (typeof node.version === 'number' ? node.version : 0) + 1;
+  node.deviceId = await getDeviceId();
+  node.schemaVersion = DATA_VERSION;
+}
+
+export async function emptyStore(): Promise<TubeStoreData> {
   const t = now();
+  const meta = await newNodeMeta();
   return {
     version: DATA_VERSION,
     rootId: 'root',
     trashId: 'trash',
     nodes: {
-      root: { id: 'root', type: 'folder', parentId: null, name: '튜브폴더', createdAt: t, modifiedAt: t, order: 0 },
+      root: { id: 'root', type: 'folder', parentId: null, name: '튜브폴더', createdAt: t, modifiedAt: t, order: 0, ...meta },
       trash: {
         id: 'trash',
         type: 'folder',
@@ -36,7 +87,8 @@ export function emptyStore(): TubeStoreData {
         system: 'trash',
         createdAt: t,
         modifiedAt: t,
-        order: Number.MAX_SAFE_INTEGER
+        order: Number.MAX_SAFE_INTEGER,
+        ...meta
       }
     },
     settings: { view: 'large', sortKey: 'name', sortDir: 'asc' }
@@ -44,14 +96,14 @@ export function emptyStore(): TubeStoreData {
 }
 
 // 불변식 보정 (DATA-MODEL.md §5) — 로드 시 항상 통과시킨다.
-export function migrate(data: Partial<TubeStoreData> | null | undefined): TubeStoreData {
+export async function migrate(data: Partial<TubeStoreData> | null | undefined): Promise<TubeStoreData> {
   if (!data || !data.nodes || typeof data.nodes !== 'object') return emptyStore();
 
   const d = data as TubeStoreData;
   if (!d.rootId) d.rootId = 'root';
   if (!d.trashId) d.trashId = 'trash';
 
-  const e = emptyStore();
+  const e = await emptyStore();
   if (!d.nodes[d.rootId]) d.nodes[d.rootId] = e.nodes.root;
   if (!d.nodes[d.trashId]) d.nodes[d.trashId] = e.nodes.trash;
   (d.nodes[d.trashId] as FolderNode).system = 'trash';
@@ -67,6 +119,17 @@ export function migrate(data: Partial<TubeStoreData> | null | undefined): TubeSt
     if (n.parentId == null || !d.nodes[n.parentId]) {
       if (n.id !== d.trashId) n.parentId = d.rootId;
     }
+  }
+
+  // 스키마 버전·동기화 메타데이터 필드 도입(DATA_VERSION 1→2) 이전 데이터 하위호환 보정.
+  // 원래 기기·수정시각을 알 수 없으므로 "지금 이 값으로 처음 확인됨"으로 보수적으로 채운다.
+  const deviceId = await getDeviceId();
+  for (const k in d.nodes) {
+    const n = d.nodes[k];
+    if (typeof n.schemaVersion !== 'number') n.schemaVersion = DATA_VERSION;
+    if (!n.deviceId) n.deviceId = deviceId;
+    if (typeof n.version !== 'number') n.version = 1;
+    if (typeof n.modifiedAt !== 'number') n.modifiedAt = n.createdAt || now();
   }
 
   d.version = DATA_VERSION;
@@ -200,7 +263,8 @@ export async function addVideoToFolder(opts: AddVideoOptions): Promise<string> {
     duration: opts.duration || 0,
     createdAt: t,
     modifiedAt: t,
-    order
+    order,
+    ...(await newNodeMeta())
   };
   await save(data);
   return id;

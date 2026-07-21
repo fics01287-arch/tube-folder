@@ -14,6 +14,12 @@ interface BaseNode {
   modifiedAt: number;
   /** 휴지통에 있는 동안만 존재 — 복원 시 되돌아갈 위치(DATA-MODEL.md §2 "휴지통 안 노드 전용") */
   prevParentId?: string;
+  /** 이 노드가 마지막으로 쓰여진 노드 스키마 버전(DATA_VERSION과 동일 값) — 향후 노드 구조 변경 시 자동 마이그레이션 판단 기준 */
+  schemaVersion: number;
+  /** 마지막으로 이 노드를 수정한 기기 식별자. 3단계 "모바일 자동 동기화" 병합 로직의 전제 조건(ROADMAP-CHECKLIST.md 1단계 참고) */
+  deviceId: string;
+  /** 항목별 수정 버전 카운터(1부터 시작, 수정마다 +1). 기기 간 시계가 어긋나도 최신 변경을 판별할 보조 지표 */
+  version: number;
 }
 
 export interface FolderNode extends BaseNode {

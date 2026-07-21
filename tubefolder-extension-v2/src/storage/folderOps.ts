@@ -3,7 +3,7 @@
 // 캡슐화한다. 데이터 구조·불변식(DATA-MODEL.md I1~I8)은 그대로 — 새 진입점만 추가.
 
 import type { FolderNode, TubeNode, TubeStoreData } from './types';
-import { load, save, now, uid, uniqueName } from './storage';
+import { load, save, now, uid, uniqueName, newNodeMeta, touch } from './storage';
 
 function childrenOf(data: TubeStoreData, parentId: string): TubeNode[] {
   const result: TubeNode[] = [];
@@ -56,7 +56,8 @@ export async function createFolder(parentId: string, name = '새 폴더'): Promi
     name: uniqueName(siblings, name),
     order: nextOrder(data, targetId),
     createdAt: t,
-    modifiedAt: t
+    modifiedAt: t,
+    ...(await newNodeMeta())
   };
   data.nodes[id] = folder;
   await save(data);
@@ -75,7 +76,7 @@ export async function renameFolder(folderId: string, newName: string): Promise<F
   if (!trimmed) throw new FolderOpError('폴더 이름을 입력하세요.');
 
   folder.name = trimmed;
-  folder.modifiedAt = now();
+  await touch(folder);
   await save(data);
   return folder;
 }
@@ -117,6 +118,8 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
   const siblings = childrenOf(data, targetId).filter((n) => n.id !== data.trashId);
   let order = nextOrder(data, targetId);
   const t = now();
+  // 배치 전체가 같은 기기·같은 순간에 만들어지므로 스탬프를 한 번만 떠서 재사용(항목별 version은 각자 1부터 시작)
+  const meta = await newNodeMeta();
   let added = 0;
   let skipped = 0;
 
@@ -140,7 +143,8 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
       duration: 0,
       createdAt: t,
       modifiedAt: t,
-      order: order++
+      order: order++,
+      ...meta
     };
     data.nodes[id] = node;
     siblings.push(node);
@@ -163,7 +167,7 @@ export async function trashFolder(folderId: string): Promise<void> {
 
   folder.prevParentId = folder.parentId ?? undefined;
   folder.parentId = data.trashId;
-  folder.modifiedAt = now();
+  await touch(folder);
   // 하위 트리는 parentId 참조로 따라오므로 별도 처리 불필요(DATA-MODEL.md §4)
   await save(data);
 }
