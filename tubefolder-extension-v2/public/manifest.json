@@ -39,7 +39,7 @@
     "128": "icons/icon128.png"
   },
   "oauth2": {
-    "client_id": "REPLACE_ME.apps.googleusercontent.com",
+    "client_id": "864997495294-jugt44j4il53kjcr5m982n0cflfp1252.apps.googleusercontent.com",
     "scopes": ["https://www.googleapis.com/auth/drive.appdata"]
   },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvnoElkdikQDxAtz5t5Im9W1H8eM0k8N592QySrdrekN0eLFOuRHsvX0GSIE+VLjbGgm1dOdijXBgy0Pj9T1Dq27Ri0ahKO/cMnzYX3yzo6Ws7wqPQPAJ2XSsg9fsvZvUdTBQksQF5ymGDjN3EyE71DUkW9KnHAUu3fF9tYK0CIuF83m0l720RoYjU3jqZlurevan8HS6Key4hzIeggp4gcgdV2QyxKW5qi6YiHCvKhTlkDHuRTolQfM3ak+pt/UsRk8+4L3OHYL8xwgcLOxO8zwFP2x3p9HWoZSfvJiuhBxcXMAie2QZeqlQa+9a3bpqoxpuGtyuw/b8Xy1W79OwjwIDAQAB"
