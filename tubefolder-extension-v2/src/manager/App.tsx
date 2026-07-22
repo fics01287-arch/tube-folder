@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { load } from '../storage/storage';
-import { addVideosToFolder, createFolder, renameFolder, trashFolder } from '../storage/folderOps';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { load, STORAGE_KEY } from '../storage/storage';
+import { addVideosToFolder, createFolder, emptyTrash, renameFolder, trashFolder } from '../storage/folderOps';
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
 import { isVideo } from '../storage/types';
 import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
 import PlayerOverlay from './PlayerOverlay';
+import SyncControl from './SyncControl';
 
 // 매니저 페이지 최소 스캐폴딩.
 // 목록형·방사형·개요보기 같은 본격 뷰(그리드/가상 스크롤/드래그앤드롭)는 5단계 별도 작업.
@@ -31,6 +32,7 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [playingVideo, setPlayingVideo] = useState<VideoNode | null>(null);
+  const [emptyingTrash, setEmptyingTrash] = useState(false);
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -39,9 +41,27 @@ export default function App() {
     setCurrentFolderId(data.nodes[wanted] ? wanted : data.rootId);
   }, []);
 
+  // 동기화 등 비동기 콜백이 "지금 보고 있는 폴더"를 유지한 채 새로고침할 수 있게 ref로 추적
+  const currentFolderIdRef = useRef<string | null>(null);
+  currentFolderIdRef.current = currentFolderId;
+  const refreshKeepingFolder = useCallback(() => {
+    refresh(currentFolderIdRef.current);
+  }, [refresh]);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // background 자동 동기화가 병합 결과를 저장하면(다른 컨텍스트의 쓰기) 화면을 따라 갱신 — 오프라인 우선 원칙 ③의
+  // "원격 확인·병합은 백그라운드, UI는 변경 감지로 자동 반영" 경로. 프리뷰(localStorage 폴백)에서는 이벤트가 없어 무시.
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.onChanged) return;
+    const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
+      if (area === 'local' && changes[STORAGE_KEY]) refreshKeepingFolder();
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, [refreshKeepingFolder]);
 
   const currentFolder = store && currentFolderId ? store.nodes[currentFolderId] : null;
 
@@ -97,6 +117,36 @@ export default function App() {
     try {
       await trashFolder(id);
       setDeletingId(null);
+      await refresh(currentFolderId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // 휴지통 안 전체 항목 수(하위 트리 포함) — 비우기 확인 시 "영향받는 항목 수" 안내용
+  const trashCount = useMemo(() => {
+    if (!store) return 0;
+    const doomed = new Set<string>();
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const k in store.nodes) {
+        const n = store.nodes[k];
+        if (doomed.has(n.id) || n.id === store.trashId) continue;
+        if (n.parentId === store.trashId || (n.parentId && doomed.has(n.parentId))) {
+          doomed.add(n.id);
+          grew = true;
+        }
+      }
+    }
+    return doomed.size;
+  }, [store]);
+
+  async function confirmEmptyTrash() {
+    setError(null);
+    try {
+      await emptyTrash();
+      setEmptyingTrash(false);
       await refresh(currentFolderId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -166,7 +216,10 @@ export default function App() {
   return (
     <div className="tf-app">
       <header className="tf-header">
-        <h1>튜브폴더</h1>
+        <div className="tf-header-row">
+          <h1>튜브폴더</h1>
+          <SyncControl onLocalDataChanged={refreshKeepingFolder} />
+        </div>
         <p className="tf-subtitle">
           이 화면은 초기 스캐폴딩용 최소 목록입니다. 그리드·가상 스크롤 등 정식 뷰는 5단계에서 구현됩니다.
         </p>
@@ -219,6 +272,28 @@ export default function App() {
           <button className="tf-btn" onClick={handleImportPlaylist} disabled={importing || !playlistUrl.trim()}>
             {importing ? '가져오는 중...' : '📥 재생목록 가져오기'}
           </button>
+        </div>
+      ) : null}
+
+      {currentFolder.id === store.trashId && trashCount > 0 ? (
+        <div className="tf-empty-trash">
+          {emptyingTrash ? (
+            <span className="tf-confirm-row">
+              <span className="tf-confirm-text">
+                휴지통의 {trashCount}개 항목이 <strong>영구 삭제</strong>됩니다(되돌릴 수 없음). 계속할까요?
+              </span>
+              <button className="tf-btn tf-btn-danger-outline" onClick={confirmEmptyTrash}>
+                영구 삭제
+              </button>
+              <button className="tf-btn tf-btn-icon" onClick={() => setEmptyingTrash(false)}>
+                취소
+              </button>
+            </span>
+          ) : (
+            <button className="tf-btn tf-btn-danger-outline" onClick={() => setEmptyingTrash(true)}>
+              🗑️ 휴지통 비우기 ({trashCount}개)
+            </button>
+          )}
         </div>
       ) : null}
 

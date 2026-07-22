@@ -179,6 +179,39 @@ export async function updatePlaybackPosition(videoId: string, position: number):
   await save(data);
 }
 
+/**
+ * 휴지통 비우기 — 휴지통 안 전체 트리를 영구 삭제하고 tombstones에 기록한다.
+ * 기록을 남기는 이유: 동기화 병합(sync/merge.ts)이 "한쪽에만 있는 노드=신규 추가"로 취급하므로,
+ * 기록 없이 지우면 다른 기기 데이터와 병합될 때 지운 항목이 부활한다.
+ */
+export async function emptyTrash(): Promise<number> {
+  const data = await load();
+  const t = now();
+  if (!data.tombstones) data.tombstones = {};
+
+  // 휴지통 자손 전체 수집(부모→자식 참조가 없으므로 parentId 역추적을 반복)
+  const doomed = new Set<string>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const k in data.nodes) {
+      const n = data.nodes[k];
+      if (doomed.has(n.id) || n.id === data.trashId) continue;
+      if (n.parentId === data.trashId || (n.parentId && doomed.has(n.parentId))) {
+        doomed.add(n.id);
+        grew = true;
+      }
+    }
+  }
+
+  for (const id of doomed) {
+    delete data.nodes[id];
+    data.tombstones[id] = t;
+  }
+  if (doomed.size > 0) await save(data);
+  return doomed.size;
+}
+
 /** 폴더(+하위 트리 전체)를 휴지통으로 이동. 완전삭제가 아니라 소프트 삭제(ALGORITHMS.md trashNodes와 동일). */
 export async function trashFolder(folderId: string): Promise<void> {
   const data = await load();

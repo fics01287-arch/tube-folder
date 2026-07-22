@@ -51,6 +51,30 @@ npm run package             # build 후 dist/ 전체를 tubefolder-extension-v2.
 3. "압축해제된 확장 프로그램을 로드합니다" → 이 폴더의 `dist/` 선택
 4. 유튜브(youtube.com/music.youtube.com) 페이지에서 우클릭 → "🗂️ 폴더 관리"에서 새 폴더·이름변경·삭제 확인
 
+## 동기화(구글 드라이브) 사용 준비 — 개발자 계정 작업 필요
+동기화 코드는 구현돼 있지만, 실제로 동작하려면 **구글 OAuth 클라이언트 ID 발급**(무료, 1회)이 필요합니다.
+
+1. https://console.cloud.google.com 접속 → 새 프로젝트 생성 (이름 예: `tubefolder`)
+2. "API 및 서비스 → 라이브러리"에서 **Google Drive API** 검색 → 사용 설정
+3. "API 및 서비스 → OAuth 동의 화면" 구성:
+   - User Type: 외부(External) → 앱 이름·지원 이메일 입력 → 저장
+   - 범위(Scopes) 추가: `.../auth/drive.appdata` (비민감 스코프라 기본 심사만 필요)
+   - 테스트 사용자에 본인 구글 계정 추가 (게시 전까지는 테스트 모드로 사용 가능)
+4. "API 및 서비스 → 사용자 인증 정보" → 사용자 인증 정보 만들기 → **OAuth 클라이언트 ID**:
+   - 애플리케이션 유형: **Chrome 확장 프로그램**
+   - 항목 ID(확장 ID): `ebmibcpohklfkbhfiiilfnhlhkdbkeen`
+     (manifest.json의 `key` 필드로 고정된 ID — `chrome://extensions`에서 로드 후 표시되는 ID와 같아야 함)
+5. 발급된 클라이언트 ID(`xxxx.apps.googleusercontent.com`)를 `public/manifest.json`의
+   `oauth2.client_id`의 `REPLACE_ME.apps.googleusercontent.com` 자리에 붙여넣고 `npm run build` 재실행
+
+참고:
+- `dev-key.pem`(개인키)은 위 확장 ID를 유지하는 데 필요한 키입니다. 지우지 마세요.
+  크롬 웹스토어에 **처음 업로드할 때** zip 안에 `key.pem`이라는 이름으로 함께 넣으면 스토어에서도 같은 ID가 유지되어
+  OAuth 클라이언트가 그대로 동작합니다.
+- 동기화 데이터는 드라이브의 앱 전용 숨김 영역(appDataFolder)에 `tubefolder-data.json` 한 파일로 저장됩니다.
+- 매니저 페이지를 `npm run dev` 미리보기에서 열 때 URL에 `?syncmock=1`을 붙이면, 실제 구글 연결 없이
+  localStorage를 "원격"으로 흉내 내는 개발용 목(mock) 백엔드로 동기화 UI·병합 로직을 시험할 수 있습니다.
+
 ## 검증 한계 (알려둘 것)
 - 매니저 페이지(storage 계층 CRUD)는 로컬 브라우저 미리보기(`npm run dev`, localStorage 폴백)로 실제 클릭까지 검증함.
 - 우클릭 컨텍스트 메뉴 → 서비스워커 → 콘텐츠 스크립트 미니 팝업으로 이어지는 전체 경로는 `chrome.contextMenus`/`chrome.tabs` 등

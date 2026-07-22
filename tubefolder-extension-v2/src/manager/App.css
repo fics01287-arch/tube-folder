@@ -241,3 +241,126 @@ body {
   height: 100%;
   border: 0;
 }
+
+/* ── 동기화 (3단계 모바일 자동 동기화) ─────────────────────────── */
+.tf-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tf-sync {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tf-sync-btn {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tf-sync-badge-ok {
+  border-color: #2f7a3d;
+}
+
+.tf-sync-badge-busy {
+  border-color: #3ea6ff;
+  color: #3ea6ff;
+}
+
+.tf-sync-badge-warn {
+  border-color: #b3442f;
+  color: #ff8a72;
+}
+
+.tf-sync-error {
+  margin-left: 8px;
+}
+
+/* 설정 패널 오버레이 — 플레이어(z-index 1000)와 같은 계층 */
+.tf-sync-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+/* 완료 고지 팝업 — CLAUDE.md 외부 서비스 UX 원칙: 표시 우선순위를 하위 화면(패널)과 분리 */
+.tf-sync-overlay-top {
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.tf-sync-panel,
+.tf-sync-popup {
+  background: #1c1c1c;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 20px 22px;
+  max-width: 480px;
+  width: calc(100% - 48px);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+
+.tf-sync-panel h2,
+.tf-sync-popup h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.tf-sync-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #ddd;
+  margin: 0 0 12px;
+}
+
+.tf-sync-fineprint {
+  font-size: 12px;
+  color: #999;
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+
+/* 외부 서비스로 넘어가 사용자 조작을 기다리는 구간 강조 박스 (CLAUDE.md UX 원칙) */
+.tf-sync-highlight {
+  border: 1px solid #b58a2c;
+  background: rgba(181, 138, 44, 0.12);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.tf-sync-highlight ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.tf-sync-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.tf-btn-primary {
+  border-color: #3ea6ff;
+  color: #3ea6ff;
+  font-weight: 600;
+}
+
+.tf-btn-primary:hover:not(:disabled) {
+  background: rgba(62, 166, 255, 0.15);
+}
+
+.tf-empty-trash {
+  margin-bottom: 16px;
+}

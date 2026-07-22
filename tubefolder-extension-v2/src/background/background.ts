@@ -11,6 +11,7 @@ import { folderChildren } from '../storage/folderOps';
 import type { TubeStoreData } from '../storage/types';
 import type { ContentToBackgroundMessage } from '../shared/messages';
 import { YOUTUBE_DOCUMENT_PATTERNS } from '../shared/hostPatterns';
+import * as syncEngine from '../sync/syncEngine';
 
 const MANAGER = 'index.html';
 const CONTEXTS: chrome.contextMenus.ContextType[] = ['page', 'link'];
@@ -108,15 +109,49 @@ function buildManageSubMenus(kind: 'rename' | 'delete', store: TubeStoreData, pa
   });
 }
 
+// ── 자동 동기화 (3단계 "모바일 자동 동기화") ─────────────────────
+// 트리거 3종을 background가 담당: ①주기(15분 알람) ②로컬 변경 후 10초 디바운스 ③브라우저 시작 시.
+// (④수동 버튼은 매니저 페이지가 직접 runSync('manual') 호출.)
+// 자동 실패는 runSync 내부에서 조용히 기록·백오프 재시도되므로 여기서는 결과를 무시한다(오프라인 우선 원칙).
+const SYNC_ALARM = 'tf-sync';
+const SYNC_PERIOD_MINUTES = 15;
+const SYNC_DEBOUNCE_MS = 10 * 1000;
+let syncDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+function ensureSyncAlarm(): void {
+  chrome.alarms.create(SYNC_ALARM, { periodInMinutes: SYNC_PERIOD_MINUTES });
+}
+
+function autoSync(): void {
+  syncEngine.runSync('auto').catch(() => {
+    // 'auto'는 원래 throw하지 않지만(내부에서 삼킴), 만약을 위한 최종 방어 — 조용히 무시
+  });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === SYNC_ALARM) autoSync();
+});
+
 // ── 이벤트 리스너 (최상위 동기 등록) ──────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
   rebuildFolderMenus();
+  ensureSyncAlarm();
 });
 chrome.runtime.onStartup.addListener(() => {
   rebuildFolderMenus();
+  ensureSyncAlarm();
+  autoSync(); // 시작 시 1회 — 블로킹 없음(백그라운드), UI는 항상 로컬 데이터로 먼저 뜸
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[STORAGE_KEY]) rebuildFolderMenus();
+  if (area === 'local' && changes[STORAGE_KEY]) {
+    rebuildFolderMenus();
+    // 동기화 자신이 병합 결과를 쓴 변경에는 재트리거하지 않는다(루프 방지).
+    // 다른 컨텍스트(매니저 등)의 동기화 쓰기가 온 경우는 잠금+무변경 판정이 걸러준다.
+    if (!syncEngine.isSyncWriting) {
+      if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+      syncDebounceTimer = setTimeout(autoSync, SYNC_DEBOUNCE_MS);
+    }
+  }
 });
 
 chrome.action.onClicked.addListener(async () => {
@@ -236,5 +271,6 @@ function flashBadge(text: string, color: string): void {
   }
 }
 
-// SW 초기화 시 즉시 메뉴 구성
+// SW 초기화 시 즉시 메뉴 구성 + 동기화 알람 보장(alarms.create는 같은 이름이면 대체라 중복 걱정 없음)
 rebuildFolderMenus();
+ensureSyncAlarm();

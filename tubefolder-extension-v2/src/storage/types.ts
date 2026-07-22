@@ -57,6 +57,12 @@ export interface TubeStoreData {
   trashId: string;
   nodes: Record<string, TubeNode>;
   settings: Settings;
+  /**
+   * 영구 삭제 기록(id → 삭제시각 ms). 휴지통 비우기로 완전히 지운 노드를 기록해 두지 않으면
+   * 동기화 병합 때 다른 기기 데이터에 남아 있던 사본이 "한쪽에만 있는 신규 노드"로 오인돼 부활한다.
+   * TOMBSTONE_TTL_MS(90일) 경과분은 병합 시 자동 청소. optional — 구버전 데이터는 migrate()가 {}로 백필.
+   */
+  tombstones?: Record<string, number>;
 }
 
 export function isFolder(node: TubeNode): node is FolderNode {

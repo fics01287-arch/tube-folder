@@ -132,6 +132,10 @@ export async function migrate(data: Partial<TubeStoreData> | null | undefined): 
     if (typeof n.modifiedAt !== 'number') n.modifiedAt = n.createdAt || now();
   }
 
+  // 영구 삭제 기록(3단계 동기화 병합용) — optional 추가 필드라 DATA_VERSION 상향 없이 백필만 한다
+  // (이어보기 lastPosition 추가 때와 같은 기준: 기존 필드 의미가 안 바뀌면 버전 유지).
+  if (!d.tombstones || typeof d.tombstones !== 'object') d.tombstones = {};
+
   d.version = DATA_VERSION;
   return d;
 }
