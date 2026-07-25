@@ -9,7 +9,7 @@
 
 1. 크롬 주소창에 `chrome://extensions` 입력 (엣지는 `edge://extensions`)
 2. 오른쪽 위 **개발자 모드** 켜기
-3. **압축해제된 확장 프로그램을 로드** 클릭 → `tubefolder-extension` 폴더 선택
+3. **압축해제된 확장 프로그램을 로드** 클릭 → `tubefolder-extension-v1` 폴더 선택
    - (남에게 zip으로 받았다면 먼저 압축을 푼 뒤 그 폴더를 선택)
 4. 툴바의 튜브폴더 아이콘 클릭 → 관리 화면이 새 탭으로 열립니다.
 
@@ -50,7 +50,7 @@
 
 ## 남에게 전달 (단일 파일 배포)
 
-`tubefolder-extension` 폴더를 통째로 zip으로 압축해 전달하면 됩니다. (`node_modules`·빌드 산출물 없음)
+`tubefolder-extension-v1` 폴더를 통째로 zip으로 압축해 전달하면 됩니다. (`node_modules`·빌드 산출물 없음)
 받는 사람은 압축을 풀고 위 **설치** 절차대로 “압축해제된 확장 로드”만 하면 됩니다.
 
 ---
@@ -58,7 +58,7 @@
 ## 폴더 구성
 
 ```
-tubefolder-extension/
+tubefolder-extension-v1/
 ├─ manifest.json     확장 정의 (MV3)
 ├─ background.js     서비스워커: 아이콘 클릭, 우클릭 "튜브폴더에 추가"
 ├─ manager.html      관리 화면
