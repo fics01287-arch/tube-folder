@@ -16,6 +16,8 @@ import {
   SYNC_STATE_KEY,
   SyncState
 } from '../sync/syncEngine';
+import { getCachedLicense } from '../license/licenseEngine';
+import { isLicenseAvailable, openPaymentPage } from '../license/licenseManager';
 
 function formatAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -39,7 +41,20 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
   const [manualError, setManualError] = useState<string | null>(null);
   // "지금 몇 분 전인지" 표시 갱신용
   const [, setTick] = useState(0);
+  const [paid, setPaid] = useState(true); // 결제 미설정(개발 단계)에서는 게이트 없이 true로 시작
+  const [buyBusy, setBuyBusy] = useState(false);
   const mounted = useRef(true);
+
+  // 유료화 정책: 클라우드 동기화는 PRO 전용. isLicenseAvailable()이 false인 동안(결제 미설정 개발
+  // 단계이거나, 아직 라이선스 확인을 지원하지 않는 PWA 컨텍스트)은 게이트를 걸지 않는다 — PWA에서
+  // "구매하기" 버튼을 눌러 확장 전용 extpay 모듈을 불러오려다 실패하는 상황을 원천 차단한다.
+  // syncEngine.connectAndEnable()도 같은 조건(isLicenseConfigured())으로 방어적 체크를 한 번 더 한다.
+  useEffect(() => {
+    if (!isLicenseAvailable()) return;
+    getCachedLicense().then((s) => {
+      if (mounted.current) setPaid(s.paid);
+    });
+  }, []);
 
   const reloadState = useCallback(async () => {
     const s = await getSyncState();
@@ -132,7 +147,9 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
   // 툴바 배지 상태 결정(원칙 ①·②)
   let badgeClass = 'tf-sync-badge-idle';
   let badgeText: string;
-  if (!state.enabled) {
+  if (!paid) {
+    badgeText = '🔒 동기화 (PRO 전용)';
+  } else if (!state.enabled) {
     badgeText = '🔗 동기화 연결 안 됨';
   } else if (busy) {
     badgeClass = 'tf-sync-badge-busy';
@@ -155,9 +172,9 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
       {/* ② 상시 노출 수동 동기화 버튼 — 연결 전이면 설정 패널을 연다 */}
       <button
         className={'tf-btn tf-sync-btn ' + badgeClass}
-        onClick={state.enabled && !state.authRequired ? handleManualSync : () => setPanelOpen(true)}
+        onClick={paid && state.enabled && !state.authRequired ? handleManualSync : () => setPanelOpen(true)}
         disabled={busy}
-        title={state.enabled ? '지금 동기화' : '동기화 설정 열기'}
+        title={!paid ? 'PRO 전용 기능 — 눌러서 더 알아보기' : state.enabled ? '지금 동기화' : '동기화 설정 열기'}
       >
         {badgeText}
       </button>
@@ -180,7 +197,37 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
           <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
             <h2>☁️ 기기 간 동기화</h2>
 
-            {!state.enabled ? (
+            {!paid ? (
+              <>
+                <p className="tf-sync-desc">
+                  클라우드 동기화는 PRO 전용 기능입니다. 업그레이드하면 폴더·영상 개수 제한 없이 여러 기기에서
+                  자동으로 동기화할 수 있습니다.
+                </p>
+                {manualError && <div className="tf-error-banner">{manualError}</div>}
+                <div className="tf-sync-actions">
+                  <button
+                    className="tf-btn tf-btn-primary"
+                    disabled={buyBusy}
+                    onClick={async () => {
+                      setBuyBusy(true);
+                      setManualError(null);
+                      try {
+                        await openPaymentPage();
+                      } catch (e) {
+                        setManualError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setBuyBusy(false);
+                      }
+                    }}
+                  >
+                    {buyBusy ? '여는 중...' : '💳 PRO 업그레이드'}
+                  </button>
+                  <button className="tf-btn" onClick={() => setPanelOpen(false)}>
+                    닫기
+                  </button>
+                </div>
+              </>
+            ) : !state.enabled ? (
               <>
                 {/* ④ⓐ 기능을 켜지 않을 경우의 결과를 선택 전에 안내 */}
                 <p className="tf-sync-desc">

@@ -13,6 +13,8 @@ import { SyncBackend, SyncError, SyncErrorCode } from './backend';
 import { GoogleDriveBackend } from './googleDrive';
 import { GoogleDriveWebBackend } from './googleDriveWeb';
 import { MockBackend } from './mockBackend';
+import { isPaidCached } from '../license/licenseEngine';
+import { isLicenseAvailable } from '../license/licenseManager';
 
 export const SYNC_STATE_KEY = 'tubefolder_sync_state';
 const LOCK_KEY = 'tubefolder_sync_lock';
@@ -251,6 +253,14 @@ export async function runSync(source: 'auto' | 'manual'): Promise<SyncRunResult>
 
 /** 대화형 연결(설정 패널 "구글 드라이브 연결" 버튼) — 성공하면 동기화를 켜고 즉시 1회 동기화한다 */
 export async function connectAndEnable(): Promise<void> {
+  // 유료화 정책(2026-07-21 확정): 클라우드 동기화는 PRO 전용. isLicenseAvailable()이 false인 동안
+  // (결제 미설정 개발 단계이거나, 아직 라이선스 확인을 지원하지 않는 PWA 컨텍스트)은 게이트를 걸지
+  // 않는다 — UI 쪽(SyncControl.tsx)도 같은 조건으로 안내를 먼저 보여주지만, 여기서도 방어적으로 한 번
+  // 더 막는다(직접 호출로 우회 방지).
+  if (isLicenseAvailable() && !(await isPaidCached())) {
+    throw new SyncError('unavailable', '클라우드 동기화는 PRO 전용 기능입니다. 먼저 업그레이드해 주세요.');
+  }
+
   const backend = getBackend();
   if (!backend.available()) {
     const hint = isExtensionContext()

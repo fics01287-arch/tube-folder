@@ -12,6 +12,14 @@ import type { TubeStoreData } from '../storage/types';
 import type { ContentToBackgroundMessage } from '../shared/messages';
 import { YOUTUBE_DOCUMENT_PATTERNS } from '../shared/hostPatterns';
 import * as syncEngine from '../sync/syncEngine';
+import ExtPay from 'extpay';
+import { EXTPAY_EXTENSION_ID, isLicenseConfigured, LicenseState, writeLicenseState } from '../license/licenseEngine';
+
+// ── 유료화(ExtensionPay) 초기화 — background.ts는 확장 전용 번들이라 정적 import가 안전하다
+// (licenseManager.ts는 매니저 페이지가 PWA와 공유하는 번들이라 동적 import로 분리해 둠).
+// startBackground()는 라이브러리 요구사항상 스크립트 최상위에서 한 번만 호출해야 한다(아래 참고).
+const extpay = ExtPay(EXTPAY_EXTENSION_ID);
+extpay.startBackground();
 
 const MANAGER = 'index.html';
 const CONTEXTS: chrome.contextMenus.ContextType[] = ['page', 'link'];
@@ -128,18 +136,48 @@ function autoSync(): void {
   });
 }
 
+// ── 라이선스(유료 상태) 확인 — 최초 실행 시 1회 + 주기적 1회만 온라인 확인, 평상시는 캐시
+// (licenseEngine.getCachedLicense)로 오프라인 사용을 보장한다(CLAUDE.md 유료화 대비 원칙).
+const LICENSE_ALARM = 'tf-license-check';
+const LICENSE_PERIOD_MINUTES = 24 * 60; // 24시간 — 결제 상태는 자주 안 바뀌므로 동기화(15분)보다 훨씬 길게
+
+function ensureLicenseAlarm(): void {
+  chrome.alarms.create(LICENSE_ALARM, { periodInMinutes: LICENSE_PERIOD_MINUTES });
+}
+
+async function refreshLicense(): Promise<void> {
+  if (!isLicenseConfigured()) return;
+  try {
+    const user = await extpay.getUser();
+    const state: LicenseState = {
+      paid: !!user.paid,
+      email: user.email || null,
+      paidAt: user.paidAt ? user.paidAt.getTime() : null,
+      checkedAt: Date.now(),
+      lastCheckFailed: false
+    };
+    await writeLicenseState(state);
+  } catch {
+    // 오프라인 등 — 기존 캐시를 그대로 두고 조용히 실패(다음 주기에 재시도)
+  }
+}
+
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === SYNC_ALARM) autoSync();
+  if (alarm.name === LICENSE_ALARM) refreshLicense();
 });
 
 // ── 이벤트 리스너 (최상위 동기 등록) ──────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
   rebuildFolderMenus();
   ensureSyncAlarm();
+  ensureLicenseAlarm();
+  refreshLicense(); // 최초 실행 시 1회 온라인 확인
 });
 chrome.runtime.onStartup.addListener(() => {
   rebuildFolderMenus();
   ensureSyncAlarm();
+  ensureLicenseAlarm();
   autoSync(); // 시작 시 1회 — 블로킹 없음(백그라운드), UI는 항상 로컬 데이터로 먼저 뜸
 });
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -271,6 +309,7 @@ function flashBadge(text: string, color: string): void {
   }
 }
 
-// SW 초기화 시 즉시 메뉴 구성 + 동기화 알람 보장(alarms.create는 같은 이름이면 대체라 중복 걱정 없음)
+// SW 초기화 시 즉시 메뉴 구성 + 동기화·라이선스 알람 보장(alarms.create는 같은 이름이면 대체라 중복 걱정 없음)
 rebuildFolderMenus();
 ensureSyncAlarm();
+ensureLicenseAlarm();

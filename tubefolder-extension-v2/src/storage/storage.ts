@@ -4,6 +4,8 @@
 // (v1과 동일한 이중 런타임 대비 — 향후 PWA 확장 시에도 이 모듈 교체 없이 그대로 동작).
 
 import type { FolderNode, TubeNode, TubeStoreData } from './types';
+import { FREE_VIDEO_LIMIT, isPaidCached, LicenseLimitError } from '../license/licenseEngine';
+import { isLicenseAvailable } from '../license/licenseManager';
 
 const KEY = 'tubefolder_v1';
 // v1(=1)에서 노드에 schemaVersion·deviceId·version 동기화 메타데이터 필드를 추가하며 2로 상향
@@ -233,6 +235,18 @@ export interface AddVideoOptions {
 
 export async function addVideoToFolder(opts: AddVideoOptions): Promise<string> {
   const data = await load();
+
+  let videoCount = 0;
+  for (const k in data.nodes) {
+    if (data.nodes[k].type === 'video') videoCount++;
+  }
+  if (videoCount >= FREE_VIDEO_LIMIT && isLicenseAvailable() && !(await isPaidCached())) {
+    throw new LicenseLimitError(
+      'video-limit',
+      `무료 버전은 영상을 최대 ${FREE_VIDEO_LIMIT}개까지 저장할 수 있습니다. 더 추가하려면 업그레이드가 필요합니다.`
+    );
+  }
+
   const t = now();
 
   let targetId = opts.folderId || data.rootId;

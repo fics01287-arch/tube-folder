@@ -6,7 +6,9 @@ import { isVideo } from '../storage/types';
 import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
 import PlayerOverlay from './PlayerOverlay';
 import SyncControl from './SyncControl';
+import LicenseControl from './LicenseControl';
 import { runSync, scheduleAutoSync } from '../sync/syncEngine';
+import { LicenseLimitError } from '../license/licenseEngine';
 
 // 매니저 페이지 최소 스캐폴딩.
 // 목록형·방사형·개요보기 같은 본격 뷰(그리드/가상 스크롤/드래그앤드롭)는 5단계 별도 작업.
@@ -34,6 +36,7 @@ export default function App() {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [playingVideo, setPlayingVideo] = useState<VideoNode | null>(null);
   const [emptyingTrash, setEmptyingTrash] = useState(false);
+  const [licenseOpenSignal, setLicenseOpenSignal] = useState(0);
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -117,6 +120,7 @@ export default function App() {
       scheduleAutoSync();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
     }
   }
 
@@ -220,10 +224,18 @@ export default function App() {
       setPlaylistUrl('');
       await refresh(currentFolderId);
       scheduleAutoSync();
-      setImportStatus(`완료: ${result.added}개 추가됨, ${result.skipped}개는 이미 있어 건너뜀`);
+      if (result.limitReached) {
+        setImportStatus(
+          `무료 버전 한도라 ${result.added}개만 추가되고 나머지는 건너뛰었습니다. 전체를 가져오려면 업그레이드가 필요합니다.`
+        );
+        setLicenseOpenSignal((n) => n + 1);
+      } else {
+        setImportStatus(`완료: ${result.added}개 추가됨, ${result.skipped}개는 이미 있어 건너뜀`);
+      }
     } catch (e) {
       setImportStatus(null);
       setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
     } finally {
       setImporting(false);
     }
@@ -242,6 +254,7 @@ export default function App() {
       <header className="tf-header">
         <div className="tf-header-row">
           <h1>튜브폴더</h1>
+          <LicenseControl openSignal={licenseOpenSignal} />
           <SyncControl onLocalDataChanged={refreshKeepingFolder} />
         </div>
         <p className="tf-subtitle">

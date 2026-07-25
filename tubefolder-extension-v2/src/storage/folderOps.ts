@@ -4,6 +4,31 @@
 
 import type { FolderNode, TubeNode, TubeStoreData, VideoNode } from './types';
 import { load, save, now, uid, uniqueName, newNodeMeta, touch } from './storage';
+import { FREE_FOLDER_LIMIT, FREE_VIDEO_LIMIT, isPaidCached, LicenseLimitError } from '../license/licenseEngine';
+import { isLicenseAvailable } from '../license/licenseManager';
+
+// 무료/유료 한도는 isLicenseAvailable()(확장 컨텍스트 + 결제 설정 완료)일 때만 적용한다. PWA는
+// "PWA에 결제 확인 붙이기"(별도 로드맵 항목) 이전까지 유료 여부를 확인할 방법이 없어, 여기서 한도를
+// 걸면 PWA 사용자가 영영 업그레이드할 수 없는 상태로 갇힌다 — 그래서 PWA에서는 아직 한도를 걸지 않는다.
+
+/** 사용자가 만든 폴더 수(루트·휴지통 제외) — 무료 티어 한도 체크용 */
+function countUserFolders(data: TubeStoreData): number {
+  let n = 0;
+  for (const k in data.nodes) {
+    const node = data.nodes[k];
+    if (node.type === 'folder' && node.id !== data.rootId && node.id !== data.trashId) n++;
+  }
+  return n;
+}
+
+/** 저장소 전체(휴지통 포함)의 영상 수 — 무료 티어 한도 체크용 */
+function countVideos(data: TubeStoreData): number {
+  let n = 0;
+  for (const k in data.nodes) {
+    if (data.nodes[k].type === 'video') n++;
+  }
+  return n;
+}
 
 function childrenOf(data: TubeStoreData, parentId: string): TubeNode[] {
   const result: TubeNode[] = [];
@@ -39,6 +64,13 @@ export class FolderOpError extends Error {}
 /** 지정 부모 아래 새 폴더 생성. 부모가 유효하지 않거나 휴지통이면 루트에 생성(불변식 I4). */
 export async function createFolder(parentId: string, name = '새 폴더'): Promise<FolderNode> {
   const data = await load();
+
+  if (countUserFolders(data) >= FREE_FOLDER_LIMIT && isLicenseAvailable() && !(await isPaidCached())) {
+    throw new LicenseLimitError(
+      'folder-limit',
+      `무료 버전은 폴더를 최대 ${FREE_FOLDER_LIMIT}개까지 만들 수 있습니다. 더 만들려면 업그레이드가 필요합니다.`
+    );
+  }
 
   let targetId = parentId;
   const target = data.nodes[targetId];
@@ -92,6 +124,8 @@ export interface ImportVideoInput {
 export interface ImportVideosResult {
   added: number;
   skipped: number;
+  /** 무료 티어 영상 한도(FREE_VIDEO_LIMIT)에 걸려 일부만 추가되고 나머지는 건너뛴 경우 true */
+  limitReached: boolean;
 }
 
 /**
@@ -122,9 +156,18 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
   const meta = await newNodeMeta();
   let added = 0;
   let skipped = 0;
+  let limitReached = false;
+
+  const gateActive = isLicenseAvailable() && !(await isPaidCached());
+  let videoCount = countVideos(data);
 
   for (const v of videos) {
     if (existingVideoIds.has(v.videoId)) {
+      skipped++;
+      continue;
+    }
+    if (gateActive && videoCount >= FREE_VIDEO_LIMIT) {
+      limitReached = true;
       skipped++;
       continue;
     }
@@ -149,11 +192,12 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
     data.nodes[id] = node;
     siblings.push(node);
     existingVideoIds.add(v.videoId);
+    videoCount++;
     added++;
   }
 
   if (added > 0) await save(data);
-  return { added, skipped };
+  return { added, skipped, limitReached };
 }
 
 /**
