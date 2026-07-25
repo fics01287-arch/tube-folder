@@ -6,6 +6,7 @@ import { isVideo } from '../storage/types';
 import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
 import PlayerOverlay from './PlayerOverlay';
 import SyncControl from './SyncControl';
+import { runSync, scheduleAutoSync } from '../sync/syncEngine';
 
 // 매니저 페이지 최소 스캐폴딩.
 // 목록형·방사형·개요보기 같은 본격 뷰(그리드/가상 스크롤/드래그앤드롭)는 5단계 별도 작업.
@@ -63,6 +64,23 @@ export default function App() {
     return () => chrome.storage.onChanged.removeListener(listener);
   }, [refreshKeepingFolder]);
 
+  // PWA(독립 웹페이지) 전용 주기·포그라운드 동기화 트리거. 크롬 확장은 background.ts의
+  // chrome.alarms(15분 주기)가 이 역할을 대신하므로 중복 실행하지 않는다.
+  useEffect(() => {
+    const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+    if (isExtension) return;
+    const tick = () => runSync('auto').catch(() => {});
+    const interval = setInterval(tick, 15 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
   const currentFolder = store && currentFolderId ? store.nodes[currentFolderId] : null;
 
   const children = useMemo(() => {
@@ -96,6 +114,7 @@ export default function App() {
       await createFolder(currentFolderId, newFolderName.trim() || '새 폴더');
       setNewFolderName('새 폴더');
       await refresh(currentFolderId);
+      scheduleAutoSync();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -107,6 +126,7 @@ export default function App() {
       await renameFolder(id, editingValue);
       setEditingId(null);
       await refresh(currentFolderId);
+      scheduleAutoSync();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -118,6 +138,7 @@ export default function App() {
       await trashFolder(id);
       setDeletingId(null);
       await refresh(currentFolderId);
+      scheduleAutoSync();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -148,6 +169,7 @@ export default function App() {
       await emptyTrash();
       setEmptyingTrash(false);
       await refresh(currentFolderId);
+      scheduleAutoSync();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -166,6 +188,7 @@ export default function App() {
   async function handleClosePlayer() {
     setPlayingVideo(null);
     await refresh(currentFolderId); // 재생 위치(lastPosition) 갱신을 store에 반영
+    scheduleAutoSync();
   }
 
   async function handleImportPlaylist() {
@@ -196,6 +219,7 @@ export default function App() {
       );
       setPlaylistUrl('');
       await refresh(currentFolderId);
+      scheduleAutoSync();
       setImportStatus(`완료: ${result.added}개 추가됨, ${result.skipped}개는 이미 있어 건너뜀`);
     } catch (e) {
       setImportStatus(null);

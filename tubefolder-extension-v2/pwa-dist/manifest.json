@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "튜브폴더 (TubeFolder) v2",
+  "version": "2.0.0",
+  "description": "유튜브 동영상·뮤직을 내 컴퓨터 탐색기처럼 무제한 폴더로 정리합니다.",
+  "permissions": ["storage", "contextMenus", "tabs", "unlimitedStorage", "identity", "alarms"],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://music.youtube.com/*",
+    "https://youtu.be/*",
+    "https://noembed.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://music.youtube.com/*",
+        "https://youtu.be/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "튜브폴더 열기",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "oauth2": {
+    "client_id": "864997495294-jugt44j4il53kjcr5m982n0cflfp1252.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/drive.appdata"]
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvnoElkdikQDxAtz5t5Im9W1H8eM0k8N592QySrdrekN0eLFOuRHsvX0GSIE+VLjbGgm1dOdijXBgy0Pj9T1Dq27Ri0ahKO/cMnzYX3yzo6Ws7wqPQPAJ2XSsg9fsvZvUdTBQksQF5ymGDjN3EyE71DUkW9KnHAUu3fF9tYK0CIuF83m0l720RoYjU3jqZlurevan8HS6Key4hzIeggp4gcgdV2QyxKW5qi6YiHCvKhTlkDHuRTolQfM3ak+pt/UsRk8+4L3OHYL8xwgcLOxO8zwFP2x3p9HWoZSfvJiuhBxcXMAie2QZeqlQa+9a3bpqoxpuGtyuw/b8Xy1W79OwjwIDAQAB"
+}

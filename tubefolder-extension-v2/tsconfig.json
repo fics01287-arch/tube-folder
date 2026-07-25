@@ -19,5 +19,5 @@
 
     "types": ["chrome"]
   },
-  "include": ["src", "vite.config.ts", "vite.manager.config.ts", "vite.background.config.ts", "vite.content.config.ts"]
+  "include": ["src", "vite.config.ts", "vite.background.config.ts", "vite.content.config.ts", "vite.pwa.config.ts"]
 }

@@ -11,6 +11,7 @@
     "build:background": "vite build --config vite.background.config.ts",
     "build:content": "vite build --config vite.content.config.ts",
     "build": "npm run typecheck && npm run build:manager && npm run build:background && npm run build:content",
+    "build:pwa": "npm run typecheck && vite build --config vite.pwa.config.ts && node scripts/rename-pwa-entry.mjs",
     "package": "npm run build && powershell -NoProfile -Command \"Compress-Archive -Path dist/* -DestinationPath ../tubefolder-extension-v2.zip -Force\""
   },
   "dependencies": {

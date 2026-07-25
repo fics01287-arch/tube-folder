@@ -11,6 +11,7 @@ import { getDeviceId, load, now, save } from '../storage/storage';
 import { mergeStores, SyncSnapshot } from './merge';
 import { SyncBackend, SyncError, SyncErrorCode } from './backend';
 import { GoogleDriveBackend } from './googleDrive';
+import { GoogleDriveWebBackend } from './googleDriveWeb';
 import { MockBackend } from './mockBackend';
 
 export const SYNC_STATE_KEY = 'tubefolder_sync_state';
@@ -102,13 +103,37 @@ export function isMockMode(): boolean {
   }
 }
 
+/** 크롬 확장 컨텍스트 여부 — true면 chrome.identity 기반, false면 PWA용 GIS 기반 백엔드를 쓴다 */
+function isExtensionContext(): boolean {
+  return typeof chrome !== 'undefined' && !!chrome.identity && !!chrome.identity.getAuthToken;
+}
+
 let backendInstance: SyncBackend | null = null;
 
 export function getBackend(): SyncBackend {
   if (!backendInstance) {
-    backendInstance = isMockMode() ? new MockBackend() : new GoogleDriveBackend();
+    if (isMockMode()) backendInstance = new MockBackend();
+    else if (isExtensionContext()) backendInstance = new GoogleDriveBackend();
+    else backendInstance = new GoogleDriveWebBackend();
   }
   return backendInstance;
+}
+
+// ── 변경 후 디바운스 동기화 (PWA 전용 트리거) ──────────────────────
+// 크롬 확장은 background.ts가 chrome.storage.onChanged로 이 역할을 담당하지만(모든 컨텍스트의
+// 쓰기를 감지), PWA에는 별도 백그라운드 컨텍스트가 없어 매니저 페이지 자신이 로컬 변경 직후
+// 직접 호출해 줘야 한다. 확장 컨텍스트에서 호출해도 무해하다 — runSync는 잠금(acquireLock)이 있어
+// background 쪽과 겹치면 그냥 'locked'로 스킵된다.
+const CHANGE_DEBOUNCE_MS = 10 * 1000;
+let changeDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function scheduleAutoSync(): void {
+  if (changeDebounceTimer) clearTimeout(changeDebounceTimer);
+  changeDebounceTimer = setTimeout(() => {
+    runSync('auto').catch(() => {
+      // auto는 내부에서 삼키므로 도달하지 않음 — 방어용
+    });
+  }, CHANGE_DEBOUNCE_MS);
 }
 
 // ── 같은 컨텍스트 내 상태 알림(매니저 UI 구독용) ──────────────────
@@ -228,7 +253,10 @@ export async function runSync(source: 'auto' | 'manual'): Promise<SyncRunResult>
 export async function connectAndEnable(): Promise<void> {
   const backend = getBackend();
   if (!backend.available()) {
-    throw new SyncError('unavailable', '이 환경에서는 동기화를 연결할 수 없습니다. 크롬 확장으로 로드한 상태에서 시도해 주세요.');
+    const hint = isExtensionContext()
+      ? '크롬 확장으로 로드한 상태에서 시도해 주세요.'
+      : '이 PWA 빌드에는 아직 구글 웹 로그인이 설정되지 않았습니다.';
+    throw new SyncError('unavailable', `이 환경에서는 동기화를 연결할 수 없습니다. ${hint}`);
   }
   await backend.connect();
   const state = await getSyncState();

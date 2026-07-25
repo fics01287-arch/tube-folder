@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>튜브폴더</title>
+    <meta name="theme-color" content="#1e1f23" />
+    <meta name="description" content="유튜브 동영상·뮤직을 내 컴퓨터 탐색기처럼 무제한 폴더로 정리" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon192.png" />
+    <link rel="apple-touch-icon" href="./icons/icon192.png" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/manager/main.tsx"></script>
+    <script>
+      // PWA 오프라인 캐시. 크롬 확장 매니저(index.html)에는 이 스크립트가 없어 등록되지 않는다.
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw-pwa.js').catch(() => {});
+        });
+      }
+    </script>
+  </body>
+</html>

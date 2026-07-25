@@ -23,16 +23,21 @@ React + TypeScript + Vite. 저장소는 `chrome.storage.local`(+ `unlimitedStora
 ## 폴더 구조
 ```
 tubefolder-extension-v2/
-├─ public/               manifest.json·icons — 빌드 시 dist/로 그대로 복사됨
-├─ index.html            매니저 페이지 진입점 (Vite 기본 규칙)
-├─ vite.config.ts             매니저(React) 빌드 설정
+├─ public/               manifest.json(확장)·manifest.webmanifest(PWA)·sw-pwa.js·icons — 빌드 시 dist/·pwa-dist/에 그대로 복사됨
+├─ index.html            매니저 페이지 진입점 — 크롬 확장 빌드용 (Vite 기본 규칙)
+├─ index.pwa.html        매니저 페이지 진입점 — 독립 PWA(휴대폰 매니저) 빌드용, 같은 src/manager 재사용
+├─ vite.config.ts             매니저(React) 빌드 설정 — 확장용, index.html → dist/
 ├─ vite.background.config.ts  서비스워커 빌드 설정 (lib 모드, ES 모듈)
 ├─ vite.content.config.ts     콘텐츠 스크립트 빌드 설정 (lib 모드, iife)
+├─ vite.pwa.config.ts         독립 PWA 빌드 설정 — index.pwa.html → pwa-dist/ (base: './', 하위 경로 배포용)
+├─ scripts/rename-pwa-entry.mjs  build:pwa 마지막 단계 — index.pwa.html → index.html로 이름 변경(정적 호스팅용)
 └─ src/
    ├─ storage/           저장 계층 — v1 storage.js를 TS로 이식(types.ts·storage.ts) + 신규 폴더 CRUD(folderOps.ts)
    ├─ background/        MV3 서비스워커 — 컨텍스트 메뉴 구성·클릭 처리
    ├─ content/            유튜브 페이지 콘텐츠 스크립트 — 미니 팝업(새 폴더/이름변경/삭제)
-   ├─ manager/            매니저 페이지(React) — 현재는 최소 스캐폴딩(트리 탐색 골격만)
+   ├─ manager/            매니저 페이지(React) — 현재는 최소 스캐폴딩(트리 탐색 골격만). 확장·PWA 공용.
+   ├─ sync/               동기화 — merge.ts(순수 병합)·syncEngine.ts(트리거)·driveBackendBase.ts(Drive REST 공용)
+   │                       ·googleDrive.ts(확장, chrome.identity)·googleDriveWeb.ts+googleIdentityWeb.ts(PWA, GIS)
    └─ shared/             background↔content 메시지 타입, 호스트 URL 패턴 상수
 ```
 
@@ -42,6 +47,7 @@ npm install               # 최초 1회
 npm run dev                # 매니저 페이지만 브라우저에서 미리보기 (chrome.storage 없으면 localStorage 폴백)
 npm run typecheck          # tsc --noEmit
 npm run build               # typecheck + 매니저·background·content 3종 빌드 → dist/
+npm run build:pwa           # typecheck + 독립 PWA 빌드 → pwa-dist/ (휴대폰 매니저용, 정적 호스팅에 그대로 올리면 됨)
 npm run package             # build 후 dist/ 전체를 tubefolder-extension-v2.zip으로 압축
 ```
 
@@ -75,11 +81,27 @@ npm run package             # build 후 dist/ 전체를 tubefolder-extension-v2.
 - 매니저 페이지를 `npm run dev` 미리보기에서 열 때 URL에 `?syncmock=1`을 붙이면, 실제 구글 연결 없이
   localStorage를 "원격"으로 흉내 내는 개발용 목(mock) 백엔드로 동기화 UI·병합 로직을 시험할 수 있습니다.
 
+## PWA(휴대폰 매니저) 사용 준비 — 개발자 계정 작업 필요 (v1과 무관, v2 전용)
+크롬 확장과 별개로, v2 매니저를 휴대폰에서 쓸 수 있는 독립 PWA로도 빌드할 수 있습니다(`npm run build:pwa` → `pwa-dist/`).
+같은 appDataFolder를 공유하므로 확장에서 만든 폴더·영상이 그대로 동기화됩니다. 단, 로그인 방식이 달라 **별도의 웹용 OAuth 클라이언트 ID**가 하나 더 필요합니다.
+
+1. 확장용과 **같은 GCP 프로젝트**에서 "API 및 서비스 → 사용자 인증 정보" → 사용자 인증 정보 만들기 → **OAuth 클라이언트 ID**
+2. 애플리케이션 유형: **웹 애플리케이션** (확장용은 "Chrome 확장 프로그램" 유형이었던 것과 다름)
+3. 승인된 자바스크립트 원본(Authorized JavaScript origins)에 PWA를 실제로 열 도메인을 등록(예: `https://fics01287-arch.github.io`)
+4. 발급된 클라이언트 ID를 `src/sync/googleIdentityWeb.ts`의 `WEB_CLIENT_ID` 상수(`REPLACE_ME_WEB_OAUTH_CLIENT_ID` 자리)에 붙여넣고 `npm run build:pwa` 재실행
+5. `pwa-dist/` 안의 내용을 원하는 정적 호스팅 경로에 그대로 올리면 됩니다(디렉터리 접속 시 `index.html`을 자동으로 찾도록 이름이 맞춰져 있음)
+
+참고:
+- 크롬 확장(`chrome.identity`)과 달리 GIS는 진짜 리프레시 토큰이 없는 클라이언트 전용 구현이라, 브라우저 세션이 끊기면 확장보다 "재연결 필요"가 더 자주 뜰 수 있습니다(설계상 불가피 — ROADMAP-CHECKLIST.md 해당 항목 참고).
+- 모바일 브라우저는 탭이 백그라운드로 가면 15분 주기 타이머가 지연될 수 있어, PWA는 "앱을 열 때(포그라운드 복귀)" 동기화가 사실상 주력 트리거입니다.
+
 ## 검증 한계 (알려둘 것)
 - 매니저 페이지(storage 계층 CRUD)는 로컬 브라우저 미리보기(`npm run dev`, localStorage 폴백)로 실제 클릭까지 검증함.
 - 우클릭 컨텍스트 메뉴 → 서비스워커 → 콘텐츠 스크립트 미니 팝업으로 이어지는 전체 경로는 `chrome.contextMenus`/`chrome.tabs` 등
   실제 확장 런타임이 있어야만 동작해, 이 개발 환경(브라우저 자동화)만으로는 재현할 수 없음 — 코드 경로 수동 추적 + 타입체크로 검증함.
   실제 Chrome에 위 "확장으로 로드해서 확인하기" 절차로 로드해 육안 확인을 권장.
+- PWA 빌드(`build:pwa`)는 이 개발 환경에서 네트워크 제한으로 브라우저를 띄울 수 없어 실제 클릭·GIS 로그인·오프라인 동작을 확인하지 못했음 —
+  `tsc`·빌드 성공, 산출물 상대경로·매니페스트·서비스워커 구성만 확인함. 위 "PWA(휴대폰 매니저) 사용 준비" 절차로 실기기에서 검증 필요.
 
 ## 상태
 - 2단계 첫 항목(우클릭 메뉴 폴더 추가·이름변경·삭제) 구현 완료. 자세한 진행 상황은 [ROADMAP-CHECKLIST.md](ROADMAP-CHECKLIST.md) 참고.
