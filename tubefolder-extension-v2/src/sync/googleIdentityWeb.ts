@@ -25,6 +25,17 @@ export function isGisConfigured(): boolean {
 }
 
 let gisLoadPromise: Promise<void> | null = null;
+/**
+ * 페이지가 뜨자마자(사용자가 "연결" 버튼을 누르기 전에) 미리 스크립트를 불러온다.
+ * 버튼 클릭 시점에 그제서야 네트워크로 로드하면, 로딩이 끝날 때까지의 시간차 때문에 모바일
+ * 브라우저가 뒤이은 requestAccessToken()의 로그인 창을 "사용자가 직접 연 것"으로 인정하지 않고
+ * 팝업을 막아버릴 수 있다(실제로 관찰된 증상: 로그인 창 대신 엉뚱한 페이지가 뜸). 미리 불러와
+ * 캐시해두면 클릭 시점엔 즉시(동기에 가깝게) 진행되어 이 문제를 피할 수 있다.
+ */
+export function preloadGis(): void {
+  if (isGisConfigured()) loadGis().catch(() => {});
+}
+
 function loadGis(): Promise<void> {
   if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) return Promise.resolve();
   if (!gisLoadPromise) {

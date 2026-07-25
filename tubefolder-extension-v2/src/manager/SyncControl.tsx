@@ -18,6 +18,7 @@ import {
 } from '../sync/syncEngine';
 import { getCachedLicense } from '../license/licenseEngine';
 import { isLicenseAvailable, openPaymentPage } from '../license/licenseManager';
+import { preloadGis } from '../sync/googleIdentityWeb';
 
 function formatAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -54,6 +55,14 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
     getCachedLicense().then((s) => {
       if (mounted.current) setPaid(s.paid);
     });
+  }, []);
+
+  // PWA(비확장) 컨텍스트에서는 페이지가 뜨자마자 구글 로그인 스크립트를 미리 불러온다 — "연결" 버튼을
+  // 누른 뒤에야 로드를 시작하면 그 시간차 때문에 모바일 브라우저가 로그인 팝업을 사용자 동작이 아닌
+  // 것으로 보고 막아버리는 문제가 실제로 관찰됨(googleIdentityWeb.ts의 preloadGis 참고).
+  useEffect(() => {
+    const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+    if (!isExtension) preloadGis();
   }, []);
 
   const reloadState = useCallback(async () => {
