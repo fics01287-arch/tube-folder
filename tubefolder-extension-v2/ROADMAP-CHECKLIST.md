@@ -32,7 +32,7 @@
 | 2. 핵심 기능 | 유튜브 재생목록 일괄 가져오기 | 중간 | ✅ 완료 (2026-07-21) — oEmbed 키 없이 ytInitialData 파싱 방식 |
 | 2. 핵심 기능 | 이어보기(재생 위치 기억) | 높음 | ✅ 완료 (2026-07-22) — 매니저 내장 iframe 재생 + 자동 이어재생 |
 | 3. 고급 기능 | 모바일 자동 동기화(구글드라이브) | 높음 | ✅ 완료 (2026-07-23) — appDataFolder+LWW 병합, 실확장 OAuth·드라이브 동기화 검증 완료 |
-| 3. 고급 기능 | PWA(휴대폰 매니저)에 동기화 붙이기 | 중간 | 🔧 진행중 (2026-07-25) — 구현·빌드 완료, GCP 웹 클라이언트 ID·실기기 검증 대기 |
+| 3. 고급 기능 | PWA(휴대폰 매니저)에 동기화 붙이기 | 중간 | 🔧 진행중 (2026-07-25) — GCP 웹 클라이언트 ID 발급·반영 완료, 실기기 로그인 검증 대기 |
 | 3. 고급 기능 | 결제 연동 구현(유료화 실장) | 높음 | 🔧 진행중 (2026-07-25) — ExtensionPay 연동·기능 잠금 구현·빌드 완료, 가입·실기기 검증 대기 |
 | 3. 고급 기능 | PWA(휴대폰 매니저)에 결제 확인 붙이기 | 중간 | ⬜ 미착수 (신설 2026-07-21) |
 | 3. 고급 기능 | 승인 기반 무료 라이선스 구현 | 중간 | ⬜ 미착수 (신설 2026-07-21) |
@@ -182,7 +182,7 @@
   - **실확장 종단 검증 (2026-07-23, 산들 실기기)**: Google Cloud 프로젝트(`tube-folder`) 생성 → Drive API 활성화 → OAuth 동의 화면(외부·테스트 모드, 테스트 사용자 등록) → "Chrome 확장 프로그램" 유형 클라이언트 ID 발급(고정 확장 ID 일치 확인) → manifest 반영 후 dist/ 로드. 실제 구글 OAuth 창에서 계정 선택·허용 → "연결 완료" 팝업 → 배지 "✅ 방금 전 동기화됨" → 폴더 생성 후 재동기화까지 실기기에서 확인 완료. 콘솔 범위(Scopes) 등록은 프로덕션 게시 시점(5단계) 과제로 이월.
   - 복잡도: 높음
 
-- [ ] **PWA(휴대폰 매니저)에 동기화 붙이기** (신설 2026-07-23, "모바일 자동 동기화" 설계 승인 시 분리 확정) — 🔧 구현·빌드 완료(2026-07-25), 실기기 검증 대기
+- [ ] **PWA(휴대폰 매니저)에 동기화 붙이기** (신설 2026-07-23, "모바일 자동 동기화" 설계 승인 시 분리 확정) — 🔧 구현·빌드 완료 + 산들이 GCP에서 웹 OAuth 클라이언트 ID 발급·반영 완료(2026-07-25), 실기기 로그인 검증만 남음
   - 배경: 이번 구현은 크롬 확장(데스크톱) 쪽 동기화 엔진까지. 휴대폰에서 같은 데이터를 보려면 PWA 매니저에도 동기화를 붙여야 하는데, PWA에는 chrome.identity가 없어 웹용 구글 로그인(GIS, Google Identity Services)이 별도로 필요 — "PWA에 결제 확인 붙이기"와 같은 구조의 독립 작업.
   - **착수 전 확인한 전제 (2026-07-25, 산들 승인)**: v1(`tubefolder-extension-v1/`, 배포 유지 목적으로 건드리지 않음)에는 붙이지 않는다. v1은 데이터 모델도 다르다(`DATA_VERSION 1`, `schemaVersion`·`deviceId`·`version`·tombstone 필드 없음). "PWA 매니저"는 v2를 새로 독립 PWA로 빌드해 만든다 — v1과 무관, 데스크톱 확장(v2)과 완전히 같은 스키마·같은 appDataFolder를 공유.
   - **구현 내용**:
@@ -193,7 +193,7 @@
     - `src/sync/syncEngine.ts`: `getBackend()`가 `chrome.identity` 존재 여부로 확장/PWA를 자동 분기(`GoogleDriveBackend` vs `GoogleDriveWebBackend`) — SyncControl.tsx 등 UI 쪽은 원래부터 환경 비의존적으로 짜여 있어 **수정 불필요**. `connectAndEnable()`의 "unavailable" 안내 문구도 환경별로 분기(확장/PWA). 신규 `scheduleAutoSync()`(10초 디바운스) 추가 — 크롬 확장은 `background.ts`의 `chrome.storage.onChanged`가 변경 후 자동 동기화를 담당하지만, PWA는 별도 백그라운드 컨텍스트가 없어 매니저 페이지 자신이 로컬 변경 직후 직접 호출해야 함.
     - `src/manager/App.tsx`: 폴더 생성·이름변경·삭제·휴지통 비우기·재생목록 가져오기·재생 위치 갱신 6곳에서 로컬 반영 후 `scheduleAutoSync()` 호출. 확장 컨텍스트가 아닐 때만 15분 주기(`setInterval`) + 포그라운드 복귀(`visibilitychange`) 동기화 트리거 추가(확장은 `chrome.alarms`가 이미 담당하므로 중복 실행 안 함).
     - **PWA 빌드 타깃 신설**: `index.pwa.html`(신규 진입점, 크롬 확장 매니저의 `index.html`과 별개) + `public/manifest.webmanifest`(PWA 웹매니페스트 — 크롬 확장 MV3 `manifest.json`과는 별도 파일) + `public/sw-pwa.js`(오프라인 캐시 서비스워커, v1 `sw.js`와 같은 "네트워크 우선→캐시 폴백" 전략이나 Vite 빌드는 파일명에 해시가 붙어 사전 캐시 목록 대신 런타임 캐싱만 사용) + `vite.pwa.config.ts`(별도 산출물 `pwa-dist/`, GitHub Pages 하위 경로 배포를 위해 `base: './'`) + `scripts/rename-pwa-entry.mjs`(빌드 산출물 `index.pwa.html`을 `index.html`로 이름 변경 — 정적 호스팅이 디렉터리 접속 시 `index.html`을 기본으로 찾기 때문) + `package.json`에 `build:pwa` 스크립트 추가.
-    - `WEB_CLIENT_ID`(`googleIdentityWeb.ts`)는 아직 `REPLACE_ME_WEB_OAUTH_CLIENT_ID` 플레이스홀더 — 산들이 **같은 GCP 프로젝트**에서 "웹 애플리케이션" 유형 OAuth 클라이언트를 새로 발급해야 함(확장용 클라이언트 ID와는 별개 값). 미교체 상태에서는 `available()`이 안전하게 `false`를 반환해 "이 PWA 빌드에는 아직 구글 웹 로그인이 설정되지 않았습니다" 안내만 뜨고 에러로 죽지 않음(확인됨).
+    - `WEB_CLIENT_ID`(`googleIdentityWeb.ts`) — **산들이 GCP 콘솔에서 "웹 애플리케이션" 유형 OAuth 클라이언트를 직접 발급하고(승인된 자바스크립트 원본: `https://fics01287-arch.github.io`), 발급된 ID를 반영 완료(2026-07-25)**. 반영 직후 리터럴 타입 비교로 인한 tsc 에러(TS2367)가 나서 `WEB_CLIENT_ID`·`EXTPAY_EXTENSION_ID` 둘 다 타입을 `string`으로 명시해 수정함(플레이스홀더 상수를 나중에 실제 값으로 바꾸는 패턴에서 공통으로 발생하는 문제 — 미리 대응해둠). `npm run build:pwa` 재실행 후 `pwa-dist/` 갱신·재배포함.
   - **검증**: `tsc --noEmit` 통과, 기존 3개 확장 빌드(manager/background/content) 회귀 없이 통과, 신규 `build:pwa` 빌드 성공 확인 — 산출물(`pwa-dist/index.html`·`manifest.webmanifest`·`sw-pwa.js`·`icons/`)의 상대경로 정상 확인(하위 경로 배포 가능한 구조). 번들에 `GoogleDriveWebBackend` 관련 코드가 실제 포함됨을 빌드 산출물에서 확인.
   - **검증 한계 (중요)**: 이 개발 환경(리눅스 샌드박스)에서는 네트워크 제한으로 브라우저(playwright/chromium)를 설치할 수 없어, 실제 화면 클릭·GIS 로그인 창·PWA 설치·오프라인 동작은 이번 세션에서 실제로 띄워보지 못했다 — 코드 경로를 수동 추적해 "미설정 상태에서 안전하게 실패"만 확인. **"모바일 자동 동기화" 때와 동일하게, 실제 검증은 산들이 실기기에서 해야 한다**: ① 같은 GCP 프로젝트에서 웹 OAuth 클라이언트 ID 발급 → `WEB_CLIENT_ID` 교체 ② `npm run build:pwa` → `pwa-dist/` 내용을 배포 위치에 올림 ③ 휴대폰 브라우저로 열어 로그인·동기화·홈 화면에 추가(PWA 설치)까지 실제 클릭으로 확인.
   - 🟢 알려진 제약(결함 아님, 설계상 불가피): GIS는 서버 없는 클라이언트 전용 구현이라 진짜 리프레시 토큰이 없음 — 크롬 확장(`chrome.identity`)만큼 조용한 자동 재인증이 보장되지 않고, 브라우저 세션이 끊기면 크롬 확장보다 "재연결 필요"가 더 자주 뜰 수 있음. 모바일 브라우저는 탭이 백그라운드로 가면 `setInterval` 15분 주기가 지연/중단될 수 있어(브라우저 절전) 실질적으로는 "앱을 열 때(포그라운드 복귀)" 트리거가 주력이 됨 — 데스크톱 확장의 "항상 켜진" 백그라운드 동기화와는 체감이 다를 수 있음.

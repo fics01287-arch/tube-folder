@@ -16,7 +16,9 @@
 
 /** ExtensionPay 대시보드에서 확장을 등록하면 발급되는 식별자로 교체해야 함(README 'ExtensionPay 사용 준비' 참고).
  *  background.ts(정적 import)와 licenseManager.ts(동적 import) 양쪽이 같은 값을 쓰도록 여기 하나로 모은다. */
-export const EXTPAY_EXTENSION_ID = 'REPLACE_ME_EXTPAY_EXTENSION_ID';
+// 타입을 string으로 넓혀 둔다 — 리터럴 타입인 채로 두면 아래 isLicenseConfigured()의 비교식이
+// "항상 참/거짓인 비교"로 오인돼 이 값을 실제 ID로 교체하는 순간 tsc 에러(TS2367)가 난다.
+export const EXTPAY_EXTENSION_ID: string = 'REPLACE_ME_EXTPAY_EXTENSION_ID';
 
 export function isLicenseConfigured(): boolean {
   return EXTPAY_EXTENSION_ID !== 'REPLACE_ME_EXTPAY_EXTENSION_ID';

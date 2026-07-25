@@ -12,7 +12,9 @@
 
 import { SyncError } from './backend';
 
-export const WEB_CLIENT_ID = 'REPLACE_ME_WEB_OAUTH_CLIENT_ID';
+// 타입을 string으로 넓혀 둔다 — 리터럴 타입으로 남으면 아래 REPLACE_ME 비교식이 "항상 참/거짓인
+// 비교"로 오인돼 tsc가 에러를 낸다(TS2367). 이 값을 나중에 다시 바꿀 일이 있어도 안전하게 유지된다.
+export const WEB_CLIENT_ID: string = '864997495294-804fbu1v7kb49p0jqu3hrc8bn90mdjs5.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const GIS_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
 /** 만료 30초 전부터는 캐시를 쓰지 않고 미리 갱신 시도 */
