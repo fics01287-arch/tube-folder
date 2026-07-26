@@ -17,6 +17,18 @@ import { LicenseLimitError } from '../license/licenseEngine';
 // 우클릭 미니 팝업과 동일한 storage 계층(createFolder/renameFolder/trashFolder)이
 // 매니저 컨텍스트에서도 똑같이 동작함을 확인할 수 있게 한다.
 
+// ROADMAP 4단계 "duration 정밀 수집" 검증용 — 수집된 값을 화면에서 바로 확인할 수 있게 표시.
+// "1:02:03" / "12:34" 형태. 0 이하(미수집)면 표시하지 않는다.
+function formatDuration(totalSeconds: number): string {
+  if (!totalSeconds || totalSeconds <= 0) return '';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
 function sortNodes(nodes: TubeNode[]): TubeNode[] {
   return [...nodes].sort((a, b) => {
     if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
@@ -219,7 +231,8 @@ export default function App() {
           url: `https://www.youtube.com/watch?v=${v.videoId}`,
           videoId: v.videoId,
           title: v.title,
-          channel: v.channel
+          channel: v.channel,
+          duration: v.duration
         }))
       );
       setPlaylistUrl('');
@@ -380,6 +393,9 @@ export default function App() {
                 >
                   🎬 {node.name}
                 </button>
+              )}
+              {!isFolder && isVideo(node) && node.duration > 0 && (
+                <span className="tf-row-duration">{formatDuration(node.duration)}</span>
               )}
 
               {isFolder && !isTrash && editingId !== node.id && deletingId === node.id && (

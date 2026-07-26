@@ -183,6 +183,13 @@ body {
   color: #ccc;
 }
 
+.tf-row-duration {
+  color: #888;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
 .tf-player-overlay {
   position: fixed;
   inset: 0;

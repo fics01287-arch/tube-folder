@@ -119,6 +119,8 @@ export interface ImportVideoInput {
   title?: string;
   channel?: string;
   kind?: 'video' | 'music';
+  /** 재생시간(초). ROADMAP 4단계 "duration 정밀 수집" — 없으면 0(미수집)으로 저장. */
+  duration?: number;
 }
 
 export interface ImportVideosResult {
@@ -183,7 +185,7 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
       thumb: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
       kind: v.kind || 'video',
       channel: v.channel || '',
-      duration: 0,
+      duration: v.duration || 0,
       createdAt: t,
       modifiedAt: t,
       order: order++,

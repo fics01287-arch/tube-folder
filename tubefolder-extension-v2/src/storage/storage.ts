@@ -201,6 +201,24 @@ export function extractVideoId(url: string | null | undefined): string | null {
   }
 }
 
+// ROADMAP-CHECKLIST.md 4단계 "영상 duration 정밀 수집" — oEmbed/noembed(fetchMeta)는 재생시간을 주지 않으므로,
+// 재생목록 가져오기(playlistImport.ts)와 같은 방식으로 API 키 없이 시청 페이지에 이미 공개돼 있는
+// ytInitialPlayerResponse.videoDetails.lengthSeconds를 정규식으로 읽는다. 실패해도 조용히 0(미수집) 반환
+// — 재생시간 하나 때문에 영상 추가 자체가 실패하면 안 됨(fetchMeta와 동일한 관용적 실패 정책).
+export async function fetchDuration(videoId: string): Promise<number> {
+  try {
+    const res = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`, {
+      credentials: 'omit'
+    });
+    if (!res.ok) return 0;
+    const html = await res.text();
+    const m = html.match(/"lengthSeconds":"(\d+)"/);
+    return m ? parseInt(m[1], 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function fetchMeta(url: string): Promise<{ title: string; channel: string } | null> {
   try {
     const r = await fetch('https://www.youtube.com/oembed?url=' + encodeURIComponent(url) + '&format=json');

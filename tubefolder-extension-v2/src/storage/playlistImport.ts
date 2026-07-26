@@ -10,6 +10,8 @@ export interface PlaylistVideo {
   videoId: string;
   title: string;
   channel: string;
+  /** 재생시간(초). 재생목록 페이지 데이터에 이미 포함돼 있어 추가 네트워크 호출 없이 얻음(0 = 못 구함/라이브 방송). */
+  duration: number;
 }
 
 export interface PlaylistFetchProgress {
@@ -45,13 +47,29 @@ function textOf(node: JsonNode): string {
   return '';
 }
 
+// "1:02:03" / "10:32" 형태의 표시용 재생시간 텍스트를 초로 변환. 형식이 아니면 0(라이브 방송 등 "실시간" 텍스트 포함).
+function parseLengthText(text: string): number {
+  const parts = text.split(':').map((p) => parseInt(p, 10));
+  if (parts.length < 2 || parts.some((p) => Number.isNaN(p))) return 0;
+  return parts.reduce((acc, p) => acc * 60 + p, 0);
+}
+
+function parseDuration(renderer: JsonNode): number {
+  // lengthSeconds가 더 정확한 원본 값이라 우선 사용, 없으면 화면 표시용 lengthText를 파싱.
+  const seconds = renderer?.lengthSeconds;
+  if (typeof seconds === 'string' && /^\d+$/.test(seconds)) return parseInt(seconds, 10);
+  const text = textOf(renderer?.lengthText);
+  return text ? parseLengthText(text) : 0;
+}
+
 function parseVideoRenderer(renderer: JsonNode): PlaylistVideo | null {
   const videoId = renderer?.videoId;
   if (!videoId || typeof videoId !== 'string') return null;
   return {
     videoId,
     title: textOf(renderer.title) || videoId,
-    channel: textOf(renderer.shortBylineText)
+    channel: textOf(renderer.shortBylineText),
+    duration: parseDuration(renderer)
   };
 }
 

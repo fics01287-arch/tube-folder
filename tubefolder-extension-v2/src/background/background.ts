@@ -6,7 +6,7 @@
 // I9(ARCHITECTURE.md 불변식): 이벤트 리스너는 반드시 스크립트 최상위에서 동기 등록해야
 // 한다(비동기 등록 시 SW 종료로 이벤트 유실) — 아래 리스너들은 모두 최상위에 있다.
 
-import { addVideoToFolder, extractVideoId, fetchMeta, load, STORAGE_KEY } from '../storage/storage';
+import { addVideoToFolder, extractVideoId, fetchDuration, fetchMeta, load, STORAGE_KEY } from '../storage/storage';
 import { folderChildren } from '../storage/folderOps';
 import type { TubeStoreData } from '../storage/types';
 import type { ContentToBackgroundMessage } from '../shared/messages';
@@ -252,7 +252,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     try {
-      const meta = await fetchMeta(url).catch(() => null);
+      // 제목/채널(oEmbed)과 재생시간(시청 페이지 파싱)은 서로 다른 소스라 병렬로 조회 — 하나가 실패해도
+      // (catch에서 null/0 폴백) 다른 하나는 영향받지 않음(ROADMAP 4단계 "duration 정밀 수집").
+      const [meta, duration] = await Promise.all([
+        fetchMeta(url).catch(() => null),
+        fetchDuration(vid).catch(() => 0)
+      ]);
       if (meta && meta.title) title = meta.title;
 
       await addVideoToFolder({
@@ -261,6 +266,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         videoId: vid,
         kind: url.indexOf('music.youtube') >= 0 ? 'music' : 'video',
         channel: meta?.channel || '',
+        duration,
         folderId
       });
       flashBadge('+1', '#22a722');
