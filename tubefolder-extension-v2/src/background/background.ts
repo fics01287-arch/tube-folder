@@ -13,7 +13,13 @@ import type { ContentToBackgroundMessage } from '../shared/messages';
 import { YOUTUBE_DOCUMENT_PATTERNS } from '../shared/hostPatterns';
 import * as syncEngine from '../sync/syncEngine';
 import ExtPay from 'extpay';
-import { EXTPAY_EXTENSION_ID, isLicenseConfigured, LicenseState, writeLicenseState } from '../license/licenseEngine';
+import {
+  EXTPAY_EXTENSION_ID,
+  FREE_DISTRIBUTION_MODE,
+  isLicenseConfigured,
+  LicenseState,
+  writeLicenseState
+} from '../license/licenseEngine';
 
 // ── 유료화(ExtensionPay) 초기화 — background.ts는 확장 전용 번들이라 정적 import가 안전하다
 // (licenseManager.ts는 매니저 페이지가 PWA와 공유하는 번들이라 동적 import로 분리해 둠).
@@ -146,7 +152,9 @@ function ensureLicenseAlarm(): void {
 }
 
 async function refreshLicense(): Promise<void> {
-  if (!isLicenseConfigured()) return;
+  // 무료 전환 모드에서는 licenseEngine.getCachedLicense()가 항상 "유료"로 응답하므로,
+  // 실제 결제 서버를 조회하는 이 네트워크 호출 자체가 무의미하다 — 조용히 건너뛴다.
+  if (FREE_DISTRIBUTION_MODE || !isLicenseConfigured()) return;
   try {
     const user = await extpay.getUser();
     const state: LicenseState = {

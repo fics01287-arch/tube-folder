@@ -6,7 +6,9 @@
 import type ExtPayDefault from 'extpay';
 import {
   EXTPAY_EXTENSION_ID,
+  FREE_DISTRIBUTION_MODE,
   FREE_LICENSE_STATE,
+  getCachedLicense,
   isExtensionContext,
   isLicenseConfigured,
   LicenseState,
@@ -30,6 +32,9 @@ async function getInstance(): Promise<ExtPayInstance> {
 
 /** 온라인 확인(네트워크 호출) — 결제 완료 직후나 사용자가 명시적으로 새로고침을 눌렀을 때만 호출할 것 */
 export async function refreshLicenseFromManager(): Promise<LicenseState> {
+  // 무료 전환 모드에서는 실제 결제 서버 조회가 무의미하므로(어차피 항상 "유료"로 응답),
+  // 네트워크 호출 없이 바로 그 오버라이드 상태를 반환한다.
+  if (FREE_DISTRIBUTION_MODE) return getCachedLicense();
   if (!isLicenseAvailable()) return FREE_LICENSE_STATE;
   try {
     const extpay = await getInstance();

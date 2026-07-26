@@ -14,6 +14,19 @@
 // PWA(비확장) 컨텍스트에서는 아직 미지원 — "PWA에 결제 확인 붙이기"(별도 로드맵 항목) 이전까지는
 // 항상 안전하게 "무료"로 취급한다(가짜 유료 상태를 만드는 것보다 안전한 기본값).
 
+/**
+ * 유료→무료 전환 스위치 (CLAUDE.md "유료→무료 전환 대비 원칙" 반영, 2026-07-27 산들 요청).
+ * 이 앱은 유료 판매 목적으로 개발됐지만, 산들이 이후 언제든 "무료로 배포하기"로 결정할 수 있다.
+ * 이 값을 true로 바꾸고 재빌드·재배포하면 ExtensionPay 결제 여부와 무관하게 전체 사용자가
+ * 모든 기능(폴더·영상 개수 제한 해제, 클라우드 동기화 등)을 무료로 쓸 수 있게 된다.
+ * 아래 getCachedLicense() 한 곳만 바꾸면 되도록 설계해, 무료 전환이 특정 파일 하나만 고치면
+ * 끝나는 결정으로 남게 했다(코드 곳곳을 뒤져 조건을 하나씩 지울 필요 없음).
+ * 주의: 빌드 시점 상수라 이미 설치된 사용자에게는 새 버전을 배포(업데이트)해야 반영된다 —
+ * 이미 설치된 확장에 즉시 반영되는 "실시간 스위치"가 필요하면 별도 설계(원격 설정 파일 등)가
+ * 필요하며, 그 경우 새로운 네트워크 호출·보안 검토가 추가로 필요하므로 별도 승인 후 진행한다.
+ */
+export const FREE_DISTRIBUTION_MODE = false;
+
 /** ExtensionPay 대시보드에서 확장을 등록하면 발급되는 식별자로 교체해야 함(README 'ExtensionPay 사용 준비' 참고).
  *  background.ts(정적 import)와 licenseManager.ts(동적 import) 양쪽이 같은 값을 쓰도록 여기 하나로 모은다. */
 // 타입을 string으로 넓혀 둔다 — 리터럴 타입인 채로 두면 아래 isLicenseConfigured()의 비교식이
@@ -48,8 +61,12 @@ function hasChromeStorage(): boolean {
   return typeof chrome !== 'undefined' && !!chrome.storage && !!chrome.storage.local;
 }
 
+/** 무료 전환 모드일 때 모든 조회가 공통으로 받는 "항상 유료" 상태 — 실제 결제 여부·이메일과 무관 */
+const FREE_DISTRIBUTION_STATE: LicenseState = { paid: true, email: null, paidAt: null, checkedAt: 0 };
+
 /** 캐시만 읽는다(네트워크 호출 없음) — 폴더 생성 등 오프라인에서도 계속 동작해야 하는 경로에서 사용 */
 export async function getCachedLicense(): Promise<LicenseState> {
+  if (FREE_DISTRIBUTION_MODE) return FREE_DISTRIBUTION_STATE;
   if (!hasChromeStorage()) return FREE_LICENSE_STATE;
   const o = await chrome.storage.local.get(LICENSE_STORAGE_KEY);
   return (o[LICENSE_STORAGE_KEY] as LicenseState) || FREE_LICENSE_STATE;

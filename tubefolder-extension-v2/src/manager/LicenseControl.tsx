@@ -6,7 +6,7 @@
 //  - 구매 복원(재설치 시 재결제 방지): 이메일로 로그인 링크를 받는 openLoginPage()를 그대로 노출
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getCachedLicense, isLicenseConfigured, LicenseState } from '../license/licenseEngine';
+import { FREE_DISTRIBUTION_MODE, getCachedLicense, isLicenseConfigured, LicenseState } from '../license/licenseEngine';
 import { isLicenseAvailable, openLoginPage, openPaymentPage, refreshLicenseFromManager } from '../license/licenseManager';
 
 interface Props {
@@ -57,7 +57,11 @@ export default function LicenseControl({ openSignal }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.paid]);
 
-  if (!isLicenseAvailable()) return null; // PWA 등 미지원 컨텍스트에서는 조용히 숨김
+  // isLicenseAvailable()은 "확장 컨텍스트 + ExtensionPay 설정 완료"를 요구하므로, EXTPAY_EXTENSION_ID가
+  // 아직 플레이스홀더인 동안(또는 PWA)에는 원래 이 배지 전체가 숨겨진다. 하지만 무료 전환 모드
+  // (FREE_DISTRIBUTION_MODE)는 애초에 결제 시스템 설정 여부와 무관하게 "무료"를 알려야 하므로,
+  // 이 경우엔 그 조건을 건너뛰고 플랫폼(확장/PWA) 상관없이 항상 배지를 보여준다.
+  if (!FREE_DISTRIBUTION_MODE && !isLicenseAvailable()) return null; // PWA 등 미지원 컨텍스트에서는 조용히 숨김
   if (!state) return null;
 
   async function handleBuy() {
@@ -101,15 +105,18 @@ export default function LicenseControl({ openSignal }: Props) {
     }
   }
 
-  const badgeText = state.paid ? '✨ PRO' : '무료';
-  const badgeClass = state.paid ? 'tf-sync-badge-ok' : 'tf-sync-badge-idle';
+  // 산들이 유료→무료로 전환하기로 결정한 빌드(FREE_DISTRIBUTION_MODE=true)에서는 구매·복원 절차 자체가
+  // 의미 없으므로, 실제로 결제했는지와 무관하게 "무료 배포 중"이라는 별도 뱃지·안내만 보여준다
+  // (CLAUDE.md "유료→무료 전환 대비 원칙"). 결제 여부를 나타내는 state.paid=true를 "PRO"로 오인 표시하지 않기 위함.
+  const badgeText = FREE_DISTRIBUTION_MODE ? '🎁 무료' : state.paid ? '✨ PRO' : '무료';
+  const badgeClass = FREE_DISTRIBUTION_MODE || state.paid ? 'tf-sync-badge-ok' : 'tf-sync-badge-idle';
 
   return (
     <div className="tf-sync">
       <button
         className={'tf-btn tf-sync-btn ' + badgeClass}
         onClick={() => setPanelOpen(true)}
-        title={state.paid ? 'PRO 사용 중' : '무료 버전 — 눌러서 더 알아보기'}
+        title={FREE_DISTRIBUTION_MODE ? '모든 기능 무료 제공 중' : state.paid ? 'PRO 사용 중' : '무료 버전 — 눌러서 더 알아보기'}
       >
         {badgeText}
       </button>
@@ -117,9 +124,21 @@ export default function LicenseControl({ openSignal }: Props) {
       {panelOpen && (
         <div className="tf-sync-overlay" onClick={() => setPanelOpen(false)}>
           <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
-            <h2>✨ 튜브폴더 PRO</h2>
+            <h2>{FREE_DISTRIBUTION_MODE ? '🎁 튜브폴더' : '✨ 튜브폴더 PRO'}</h2>
 
-            {!isLicenseConfigured() ? (
+            {FREE_DISTRIBUTION_MODE ? (
+              <>
+                <p className="tf-sync-desc">
+                  이 앱은 현재 모든 기능을 무료로 제공합니다. 폴더·영상 개수 제한 없이, 클라우드 동기화까지 자유롭게
+                  사용하실 수 있습니다.
+                </p>
+                <div className="tf-sync-actions">
+                  <button className="tf-btn" onClick={() => setPanelOpen(false)}>
+                    닫기
+                  </button>
+                </div>
+              </>
+            ) : !isLicenseConfigured() ? (
               <>
                 <p className="tf-sync-desc">아직 결제 설정이 완료되지 않았습니다(개발자 준비 중).</p>
                 <div className="tf-sync-actions">
