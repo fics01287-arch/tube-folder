@@ -3,6 +3,7 @@ import { load, STORAGE_KEY } from '../storage/storage';
 import {
   addVideosToFolder,
   createFolder,
+  dismissTrashInfo,
   emptyTrash,
   previewRetentionPurgeCount,
   purgeExpiredTrash,
@@ -63,6 +64,9 @@ export default function App() {
   const [pendingRetentionDays, setPendingRetentionDays] = useState<number | null | undefined>(undefined);
   const [pendingRetentionPreview, setPendingRetentionPreview] = useState(0);
   const [retentionBusy, setRetentionBusy] = useState(false);
+  // 삭제(휴지통 이동) 시 뜨는 보관기간 정책 안내 팝업 — 대상 폴더 id가 있으면 열려 있는 상태
+  const [trashInfoModalFolderId, setTrashInfoModalFolderId] = useState<string | null>(null);
+  const [trashInfoCheckbox, setTrashInfoCheckbox] = useState(false);
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -172,6 +176,31 @@ export default function App() {
     try {
       await trashFolder(id);
       setDeletingId(null);
+      await refresh(currentFolderId);
+      scheduleAutoSync();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // 🗑 버튼 클릭 — 정책 안내를 "다시 보지 않기" 체크하지 않았으면 먼저 팝업으로 보관기간 정책을
+  // 설명하고, 이미 체크해 뒀으면 기존의 가벼운 한 줄 확인(휴지통으로 이동할까요?)만 띄운다.
+  function handleTrashClick(id: string) {
+    if (store?.settings.trashInfoDismissed) {
+      setDeletingId(id);
+    } else {
+      setTrashInfoCheckbox(false);
+      setTrashInfoModalFolderId(id);
+    }
+  }
+
+  async function confirmTrashWithInfo() {
+    if (!trashInfoModalFolderId) return;
+    setError(null);
+    try {
+      if (trashInfoCheckbox) await dismissTrashInfo();
+      await trashFolder(trashInfoModalFolderId);
+      setTrashInfoModalFolderId(null);
       await refresh(currentFolderId);
       scheduleAutoSync();
     } catch (e) {
@@ -516,7 +545,7 @@ export default function App() {
                   >
                     ✏️
                   </button>
-                  <button className="tf-btn tf-btn-danger-outline" onClick={() => setDeletingId(node.id)} title="휴지통으로 이동">
+                  <button className="tf-btn tf-btn-danger-outline" onClick={() => handleTrashClick(node.id)} title="휴지통으로 이동">
                     🗑
                   </button>
                 </span>
@@ -527,6 +556,39 @@ export default function App() {
       </ul>
 
       {playingVideo && <PlayerOverlay key={playingVideo.id} video={playingVideo} onClose={handleClosePlayer} />}
+
+      {trashInfoModalFolderId && store && (
+        <div className="tf-sync-overlay" onClick={() => setTrashInfoModalFolderId(null)}>
+          <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
+            <h2>🗑️ 휴지통으로 이동</h2>
+            <p className="tf-sync-desc">
+              "{store.nodes[trashInfoModalFolderId]?.name}" 폴더를 휴지통으로 옮깁니다. 휴지통에 있는 항목은 설정된 보관
+              기간이 지나면 자동으로 완전히 삭제됩니다(되돌릴 수 없음).
+            </p>
+            <p className="tf-sync-fineprint">
+              기본 보관 기간은 30일이며, 휴지통 화면에서 원하는 기간으로 직접 조정하거나 자동 삭제를 아예 꺼둘 수도
+              있습니다(현재 설정:{' '}
+              {store.settings.trashRetentionDays == null ? '자동 삭제 안 함' : `${store.settings.trashRetentionDays}일`}).
+            </p>
+            <label className="tf-checkbox-row">
+              <input
+                type="checkbox"
+                checked={trashInfoCheckbox}
+                onChange={(e) => setTrashInfoCheckbox(e.target.checked)}
+              />
+              다음부터 이 안내를 보지 않기
+            </label>
+            <div className="tf-sync-actions">
+              <button className="tf-btn tf-btn-danger-outline" onClick={confirmTrashWithInfo}>
+                휴지통으로 이동
+              </button>
+              <button className="tf-btn" onClick={() => setTrashInfoModalFolderId(null)}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

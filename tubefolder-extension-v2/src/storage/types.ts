@@ -51,6 +51,8 @@ export interface Settings {
   sortDir: 'asc' | 'desc';
   /** 휴지통 보관 기간(일). null = 자동 삭제 없음. 기본 30일(ROADMAP 4단계 "휴지통 보존기간 설정"). */
   trashRetentionDays: number | null;
+  /** 삭제(휴지통 이동) 시 보관기간 정책 안내 팝업을 "다시 보지 않기" 체크했으면 true. 기본 false(계속 노출). */
+  trashInfoDismissed: boolean;
 }
 
 export interface TubeStoreData {

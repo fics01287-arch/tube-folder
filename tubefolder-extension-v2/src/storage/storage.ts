@@ -93,7 +93,7 @@ export async function emptyStore(): Promise<TubeStoreData> {
         ...meta
       }
     },
-    settings: { view: 'large', sortKey: 'name', sortDir: 'asc', trashRetentionDays: 30 }
+    settings: { view: 'large', sortKey: 'name', sortDir: 'asc', trashRetentionDays: 30, trashInfoDismissed: false }
   };
 }
 
@@ -116,6 +116,7 @@ export async function migrate(data: Partial<TubeStoreData> | null | undefined): 
   if (!d.settings.sortDir) d.settings.sortDir = 'asc';
   // null은 "자동 삭제 없음"이라는 유효한 값이라 undefined일 때만 기본값(30일)으로 백필한다.
   if (typeof d.settings.trashRetentionDays === 'undefined') d.settings.trashRetentionDays = 30;
+  if (typeof d.settings.trashInfoDismissed !== 'boolean') d.settings.trashInfoDismissed = false;
 
   for (const k in d.nodes) {
     const n = d.nodes[k];

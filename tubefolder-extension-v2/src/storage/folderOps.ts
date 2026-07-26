@@ -337,6 +337,16 @@ export async function setTrashRetentionDays(days: number | null): Promise<{ purg
   return { purgedCount };
 }
 
+/**
+ * 삭제(휴지통 이동) 시 뜨는 보관기간 정책 안내 팝업의 "다음부터 이 안내를 보지 않기" 체크 저장.
+ * ROADMAP 4단계 "휴지통 보존기간" UX 원칙 ⑤(초기 사용 기간 삭제 시점 안내) 반영.
+ */
+export async function dismissTrashInfo(): Promise<void> {
+  const data = await load();
+  data.settings.trashInfoDismissed = true;
+  await save(data);
+}
+
 /** 폴더(+하위 트리 전체)를 휴지통으로 이동. 완전삭제가 아니라 소프트 삭제(ALGORITHMS.md trashNodes와 동일). */
 export async function trashFolder(folderId: string): Promise<void> {
   const data = await load();

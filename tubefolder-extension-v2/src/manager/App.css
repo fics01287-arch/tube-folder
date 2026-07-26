@@ -395,3 +395,13 @@ body {
   padding: 4px 8px;
   font-size: 12px;
 }
+
+.tf-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #ccc;
+  margin: 12px 0;
+  cursor: pointer;
+}
