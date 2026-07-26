@@ -7,6 +7,7 @@ import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
 import PlayerOverlay from './PlayerOverlay';
 import SyncControl from './SyncControl';
 import LicenseControl from './LicenseControl';
+import AppInfo from './AppInfo';
 import { runSync, scheduleAutoSync } from '../sync/syncEngine';
 import { LicenseLimitError } from '../license/licenseEngine';
 
@@ -256,6 +257,7 @@ export default function App() {
           <h1>튜브폴더</h1>
           <LicenseControl openSignal={licenseOpenSignal} />
           <SyncControl onLocalDataChanged={refreshKeepingFolder} />
+          <AppInfo />
         </div>
         <p className="tf-subtitle">
           이 화면은 초기 스캐폴딩용 최소 목록입니다. 그리드·가상 스크롤 등 정식 뷰는 5단계에서 구현됩니다.
