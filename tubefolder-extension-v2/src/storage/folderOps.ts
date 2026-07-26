@@ -258,6 +258,85 @@ export async function emptyTrash(): Promise<number> {
   return doomed.size;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 보관기간이 지난 휴지통 항목을 실제로 지운다(제자리 수정, 저장은 호출부 책임).
+ * "휴지통에 들어간 시점"은 직접 휴지통으로 옮겨진 최상위 항목(parentId===trashId)의 modifiedAt으로
+ * 판단한다(trashFolder가 이동 시 touch()로 갱신) — 그 하위 자손은 부모를 따라가므로 개별 판단 불필요.
+ * emptyTrash()와 같은 BFS로 하위 트리를 모아 tombstone까지 함께 남긴다(동기화 병합 시 부활 방지).
+ */
+function purgeExpiredIn(data: TubeStoreData): number {
+  const days = data.settings.trashRetentionDays;
+  if (days == null) return 0; // "자동 삭제 없음"
+  const cutoff = now() - days * DAY_MS;
+
+  const expiredRoots: string[] = [];
+  for (const k in data.nodes) {
+    const n = data.nodes[k];
+    if (n.parentId === data.trashId && n.modifiedAt <= cutoff) expiredRoots.push(n.id);
+  }
+  if (expiredRoots.length === 0) return 0;
+
+  if (!data.tombstones) data.tombstones = {};
+  const t = now();
+  const doomed = new Set<string>(expiredRoots);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const k in data.nodes) {
+      const n = data.nodes[k];
+      if (doomed.has(n.id)) continue;
+      if (n.parentId && doomed.has(n.parentId)) {
+        doomed.add(n.id);
+        grew = true;
+      }
+    }
+  }
+  for (const id of doomed) {
+    delete data.nodes[id];
+    data.tombstones[id] = t;
+  }
+  return doomed.size;
+}
+
+/** 앱 시작 시 자동 호출용 — 기한 지난 항목이 있을 때만 저장한다(불필요한 쓰기 방지). */
+export async function purgeExpiredTrash(): Promise<number> {
+  const data = await load();
+  const purged = purgeExpiredIn(data);
+  if (purged > 0) await save(data);
+  return purged;
+}
+
+/**
+ * 보관기간을 바꾸기 "전" 미리보기 — 이 값으로 당장 바꾸면 몇 개 항목이 즉시 완전 삭제되는지 계산만 한다
+ * (저장 없음, 순수 함수). 이미 로드된 store를 그대로 넘겨 쓰면 되므로 async가 아니다.
+ * UX 원칙: "보관기간을 줄여 기존 항목이 즉시 영구삭제될 수 있는 경우, 적용 전 영향받는 항목 수를 알리고 확인받기".
+ */
+export function previewRetentionPurgeCount(data: TubeStoreData, days: number | null): number {
+  if (days == null) return 0;
+  const cutoff = now() - days * DAY_MS;
+  let count = 0;
+  for (const k in data.nodes) {
+    const n = data.nodes[k];
+    if (n.parentId === data.trashId && n.modifiedAt <= cutoff) count++;
+  }
+  return count;
+}
+
+/**
+ * 보관기간 변경 적용 — "변경은 기존 보관 중인 항목에도 소급 적용"이 기본값이라, 설정을 바꾼 즉시
+ * 새 기준으로 만료된 항목이 있으면 함께 정리한다(즉시 삭제될 개수는 호출 전 previewRetentionPurgeCount로
+ * 미리 확인해 사용자 동의를 받는 것을 전제로 한다 — 이 함수 자체는 무조건 적용한다).
+ */
+export async function setTrashRetentionDays(days: number | null): Promise<{ purgedCount: number }> {
+  const data = await load();
+  data.settings.trashRetentionDays = days;
+  const purgedCount = purgeExpiredIn(data);
+  await save(data);
+  return { purgedCount };
+}
+
 /** 폴더(+하위 트리 전체)를 휴지통으로 이동. 완전삭제가 아니라 소프트 삭제(ALGORITHMS.md trashNodes와 동일). */
 export async function trashFolder(folderId: string): Promise<void> {
   const data = await load();

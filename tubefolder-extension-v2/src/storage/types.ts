@@ -49,6 +49,8 @@ export interface Settings {
   view: 'xl' | 'large' | 'medium' | 'small' | 'list' | 'details';
   sortKey: 'name' | 'date' | 'type' | 'size' | 'none';
   sortDir: 'asc' | 'desc';
+  /** 휴지통 보관 기간(일). null = 자동 삭제 없음. 기본 30일(ROADMAP 4단계 "휴지통 보존기간 설정"). */
+  trashRetentionDays: number | null;
 }
 
 export interface TubeStoreData {

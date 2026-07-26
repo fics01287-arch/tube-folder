@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { load, STORAGE_KEY } from '../storage/storage';
-import { addVideosToFolder, createFolder, emptyTrash, renameFolder, trashFolder } from '../storage/folderOps';
+import {
+  addVideosToFolder,
+  createFolder,
+  emptyTrash,
+  previewRetentionPurgeCount,
+  purgeExpiredTrash,
+  renameFolder,
+  setTrashRetentionDays,
+  trashFolder
+} from '../storage/folderOps';
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
 import { isVideo } from '../storage/types';
 import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
@@ -50,6 +59,10 @@ export default function App() {
   const [playingVideo, setPlayingVideo] = useState<VideoNode | null>(null);
   const [emptyingTrash, setEmptyingTrash] = useState(false);
   const [licenseOpenSignal, setLicenseOpenSignal] = useState(0);
+  // 휴지통 보관기간 변경 확인 흐름 — null이면 확인 대기 중이 아님(선택만 바꾼 상태)
+  const [pendingRetentionDays, setPendingRetentionDays] = useState<number | null | undefined>(undefined);
+  const [pendingRetentionPreview, setPendingRetentionPreview] = useState(0);
+  const [retentionBusy, setRetentionBusy] = useState(false);
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -66,7 +79,12 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
-    refresh();
+    // 자동 비우기: 앱을 열 때마다 보관기간이 지난 휴지통 항목을 조용히 정리(ROADMAP 4단계).
+    // 항상 켜져 있는 백그라운드 타이머가 아니라 "열 때 확인"하는 방식이라, 오래 안 열어도
+    // 데이터가 유실되진 않고 다음에 열 때 한꺼번에 정리된다.
+    purgeExpiredTrash()
+      .catch(() => {})
+      .finally(() => refresh());
   }, [refresh]);
 
   // background 자동 동기화가 병합 결과를 저장하면(다른 컨텍스트의 쓰기) 화면을 따라 갱신 — 오프라인 우선 원칙 ③의
@@ -192,6 +210,34 @@ export default function App() {
     }
   }
 
+  // 보관기간 선택 변경 — 즉시 적용하지 않고, 그 값으로 바꾸면 당장 완전 삭제될 항목이 있는지부터 확인한다
+  // (영향 없으면 확인 절차 없이 바로 적용 — UX 원칙은 "즉시 삭제될 수 있는 경우"에만 확인을 요구함).
+  function handleRetentionSelect(value: string) {
+    if (!store) return;
+    const days = value === 'none' ? null : parseInt(value, 10);
+    const impact = previewRetentionPurgeCount(store, days);
+    if (impact > 0) {
+      setPendingRetentionDays(days);
+      setPendingRetentionPreview(impact);
+    } else {
+      applyRetention(days);
+    }
+  }
+
+  async function applyRetention(days: number | null) {
+    setError(null);
+    setRetentionBusy(true);
+    try {
+      await setTrashRetentionDays(days);
+      setPendingRetentionDays(undefined);
+      await refresh(currentFolderId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRetentionBusy(false);
+    }
+  }
+
   function handleVideoClick(node: TubeNode) {
     setError(null);
     if (!isVideo(node)) return;
@@ -291,6 +337,50 @@ export default function App() {
           </span>
         ))}
       </nav>
+
+      {currentFolder.id === store.trashId ? (
+        <div className="tf-trash-policy-banner">
+          {pendingRetentionDays !== undefined ? (
+            <span className="tf-confirm-row">
+              <span className="tf-confirm-text">
+                지금 바꾸면 보관기간이 지난 {pendingRetentionPreview}개 항목이 <strong>즉시 완전 삭제</strong>됩니다(되돌릴 수
+                없음). 계속할까요?
+              </span>
+              <button
+                className="tf-btn tf-btn-danger-outline"
+                disabled={retentionBusy}
+                onClick={() => applyRetention(pendingRetentionDays)}
+              >
+                {retentionBusy ? '적용 중...' : '적용'}
+              </button>
+              <button className="tf-btn tf-btn-icon" onClick={() => setPendingRetentionDays(undefined)}>
+                취소
+              </button>
+            </span>
+          ) : (
+            <>
+              <span className="tf-trash-policy-text">
+                {store.settings.trashRetentionDays == null
+                  ? '휴지통 항목을 자동으로 삭제하지 않습니다.'
+                  : `휴지통 항목은 ${store.settings.trashRetentionDays}일이 지나면 자동으로 완전히 삭제됩니다(되돌릴 수 없음).`}
+              </span>
+              <select
+                className="tf-input tf-retention-select"
+                value={store.settings.trashRetentionDays == null ? 'none' : String(store.settings.trashRetentionDays)}
+                onChange={(e) => handleRetentionSelect(e.target.value)}
+                disabled={retentionBusy}
+              >
+                <option value="7">7일</option>
+                <option value="14">14일</option>
+                <option value="30">30일</option>
+                <option value="60">60일</option>
+                <option value="90">90일</option>
+                <option value="none">자동 삭제 안 함</option>
+              </select>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {currentFolder.id !== store.trashId ? (
         <div className="tf-new-folder">
@@ -400,7 +490,11 @@ export default function App() {
 
               {isFolder && !isTrash && editingId !== node.id && deletingId === node.id && (
                 <span className="tf-row-actions tf-confirm-row">
-                  <span className="tf-confirm-text">휴지통으로 이동할까요?</span>
+                  <span className="tf-confirm-text">
+                    휴지통으로 이동할까요?
+                    {store.settings.trashRetentionDays != null &&
+                      ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
+                  </span>
                   <button className="tf-btn tf-btn-danger-outline" onClick={() => confirmDelete(node.id)}>
                     삭제
                   </button>
