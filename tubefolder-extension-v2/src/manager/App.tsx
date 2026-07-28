@@ -8,11 +8,13 @@ import {
   previewRetentionPurgeCount,
   purgeExpiredTrash,
   renameFolder,
+  setFolderIcon,
   setTrashRetentionDays,
   trashFolder
 } from '../storage/folderOps';
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
 import { youtubeUrl } from '../shared/youtubeSelectors';
+import { DEFAULT_FOLDER_ICON, FOLDER_ICON_CATEGORIES } from '../shared/folderIcons';
 import { isVideo } from '../storage/types';
 import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
 import PlayerOverlay from './PlayerOverlay';
@@ -38,6 +40,13 @@ function formatDuration(totalSeconds: number): string {
   const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
   const ss = String(s).padStart(2, '0');
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// 루트·휴지통은 항상 고정 아이콘(v1과 동일), 그 외 폴더는 사용자가 고른 아이콘(icon 필드) 또는 기본 아이콘.
+function folderIcon(node: TubeNode, store: TubeStoreData): string {
+  if (node.id === store.rootId) return '🏠';
+  if (node.id === store.trashId) return '🗑️';
+  return (node.type === 'folder' && node.icon) || DEFAULT_FOLDER_ICON;
 }
 
 function sortNodes(nodes: TubeNode[]): TubeNode[] {
@@ -68,6 +77,8 @@ export default function App() {
   // 삭제(휴지통 이동) 시 뜨는 보관기간 정책 안내 팝업 — 대상 폴더 id가 있으면 열려 있는 상태
   const [trashInfoModalFolderId, setTrashInfoModalFolderId] = useState<string | null>(null);
   const [trashInfoCheckbox, setTrashInfoCheckbox] = useState(false);
+  // 폴더 아이콘 선택 패널 — 대상 폴더 id가 있으면 열려 있는 상태(ROADMAP 4단계 "폴더 아이콘 다양화")
+  const [iconPickerFolderId, setIconPickerFolderId] = useState<string | null>(null);
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -165,6 +176,18 @@ export default function App() {
     try {
       await renameFolder(id, editingValue);
       setEditingId(null);
+      await refresh(currentFolderId);
+      scheduleAutoSync();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function handlePickIcon(id: string, icon: string | null) {
+    setError(null);
+    try {
+      await setFolderIcon(id, icon);
+      setIconPickerFolderId(null);
       await refresh(currentFolderId);
       scheduleAutoSync();
     } catch (e) {
@@ -362,7 +385,7 @@ export default function App() {
               disabled={node.id === currentFolderId}
               onClick={() => setCurrentFolderId(node.id)}
             >
-              {node.id === store.rootId ? '🏠' : node.id === store.trashId ? '🗑️' : '📁'} {node.name}
+              {folderIcon(node, store)} {node.name}
             </button>
           </span>
         ))}
@@ -502,7 +525,7 @@ export default function App() {
                   </span>
                 ) : (
                   <button className="tf-row-name" onClick={() => setCurrentFolderId(node.id)} title="열기">
-                    {isTrash ? '🗑️' : '📁'} {node.name}
+                    {folderIcon(node, store)} {node.name}
                   </button>
                 )
               ) : (
@@ -536,6 +559,9 @@ export default function App() {
 
               {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && (
                 <span className="tf-row-actions">
+                  <button className="tf-btn tf-btn-icon" onClick={() => setIconPickerFolderId(node.id)} title="아이콘 변경">
+                    🎨
+                  </button>
                   <button
                     className="tf-btn tf-btn-icon"
                     onClick={() => {
@@ -557,6 +583,42 @@ export default function App() {
       </ul>
 
       {playingVideo && <PlayerOverlay key={playingVideo.id} video={playingVideo} onClose={handleClosePlayer} />}
+
+      {iconPickerFolderId && store && (
+        <div className="tf-sync-overlay" onClick={() => setIconPickerFolderId(null)}>
+          <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
+            <h2>🎨 폴더 아이콘 선택</h2>
+            <p className="tf-sync-desc">"{store.nodes[iconPickerFolderId]?.name}" 폴더에 사용할 아이콘을 골라주세요.</p>
+            <div className="tf-icon-picker">
+              {FOLDER_ICON_CATEGORIES.map((cat) => (
+                <div key={cat.label} className="tf-icon-picker-category">
+                  <div className="tf-icon-picker-label">{cat.label}</div>
+                  <div className="tf-icon-picker-grid">
+                    {cat.icons.map((icon) => (
+                      <button
+                        key={icon}
+                        className="tf-icon-picker-item"
+                        onClick={() => handlePickIcon(iconPickerFolderId, icon)}
+                        title={icon}
+                      >
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="tf-sync-actions">
+              <button className="tf-btn" onClick={() => handlePickIcon(iconPickerFolderId, null)}>
+                {DEFAULT_FOLDER_ICON} 기본 아이콘으로 초기화
+              </button>
+              <button className="tf-btn" onClick={() => setIconPickerFolderId(null)}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {trashInfoModalFolderId && store && (
         <div className="tf-sync-overlay" onClick={() => setTrashInfoModalFolderId(null)}>

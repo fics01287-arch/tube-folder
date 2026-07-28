@@ -342,6 +342,41 @@ body {
   gap: 6px;
 }
 
+.tf-icon-picker {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.tf-icon-picker-category {
+  margin-bottom: 10px;
+}
+
+.tf-icon-picker-label {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 4px;
+}
+
+.tf-icon-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.tf-icon-picker-item {
+  background: #1f1f1f;
+  border: 1px solid #3f3f3f;
+  border-radius: 8px;
+  font-size: 18px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.tf-icon-picker-item:hover {
+  border-color: #3ea6ff;
+}
+
 /* 외부 서비스로 넘어가 사용자 조작을 기다리는 구간 강조 박스 (CLAUDE.md UX 원칙) */
 .tf-sync-highlight {
   border: 1px solid #b58a2c;

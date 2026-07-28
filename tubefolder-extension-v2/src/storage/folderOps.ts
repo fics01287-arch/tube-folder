@@ -114,6 +114,26 @@ export async function renameFolder(folderId: string, newName: string): Promise<F
   return folder;
 }
 
+/**
+ * 폴더 아이콘 변경(ROADMAP 4단계 "폴더 아이콘 다양화 + 초기화"). icon=null이면 기본 아이콘으로
+ * 초기화(필드 삭제 — 저장 용량·하위호환 양쪽 모두 undefined가 "기본값"과 같은 의미이므로 재사용).
+ * 루트/휴지통은 renameFolder와 동일하게 항상 고정 아이콘(🏠/🗑️)이라 변경 대상에서 제외.
+ */
+export async function setFolderIcon(folderId: string, icon: string | null): Promise<FolderNode> {
+  const data = await load();
+  const folder = data.nodes[folderId];
+  if (!folder || folder.type !== 'folder') throw new FolderOpError('폴더를 찾을 수 없습니다.');
+  if (folderId === data.rootId || folderId === data.trashId) {
+    throw new FolderOpError('이 폴더는 아이콘을 바꿀 수 없습니다.');
+  }
+
+  if (icon) folder.icon = icon;
+  else delete folder.icon;
+  await touch(folder);
+  await save(data);
+  return folder;
+}
+
 export interface ImportVideoInput {
   url: string;
   videoId: string;

@@ -26,6 +26,8 @@ export interface FolderNode extends BaseNode {
   type: 'folder';
   /** 휴지통 폴더에만 존재하는 시스템 표식. 있으면 이동·복사·삭제·이름변경 불가. */
   system?: 'trash';
+  /** 사용자가 고른 폴더 아이콘(이모지 1개, src/shared/folderIcons.ts 참고). 없으면 기본 폴더 아이콘 사용(하위호환 optional). */
+  icon?: string;
 }
 
 export interface VideoNode extends BaseNode {
