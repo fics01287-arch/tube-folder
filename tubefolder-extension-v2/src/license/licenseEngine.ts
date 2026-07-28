@@ -14,6 +14,8 @@
 // PWA(비확장) 컨텍스트에서는 아직 미지원 — "PWA에 결제 확인 붙이기"(별도 로드맵 항목) 이전까지는
 // 항상 안전하게 "무료"로 취급한다(가짜 유료 상태를 만드는 것보다 안전한 기본값).
 
+import { APPROVED_LICENSES } from './approvedLicenses';
+
 /**
  * 유료→무료 전환 스위치 (CLAUDE.md "유료→무료 전환 대비 원칙" 반영, 2026-07-27 산들 요청).
  * 이 앱은 유료 판매 목적으로 개발됐지만, 산들이 이후 언제든 "무료로 배포하기"로 결정할 수 있다.
@@ -49,6 +51,13 @@ export interface LicenseState {
   checkedAt: number;
   /** 마지막 온라인 확인이 실패했는지(오프라인 등) — 캐시는 유지하되 UI가 참고할 수 있게 남겨둠 */
   lastCheckFailed?: boolean;
+  /**
+   * paid=true의 근거. 'extpay'=실제 결제 확인(ExtensionPay), 'license-key'=승인 기반 무료 라이선스
+   * (3단계 "승인 기반 무료 라이선스 구현", approvedLicenses.ts 화이트리스트 검증 통과).
+   * 기존 데이터엔 없던 필드라 optional — 없으면 'extpay'로 간주(하위호환). 스토어 노드 스키마가 아니라
+   * 별도 storage 키(LICENSE_STORAGE_KEY)의 값이라 DATA_VERSION 마이그레이션과 무관하게 optional 추가만으로 충분.
+   */
+  source?: 'extpay' | 'license-key';
 }
 
 export const FREE_LICENSE_STATE: LicenseState = { paid: false, email: null, paidAt: null, checkedAt: 0 };
@@ -85,6 +94,33 @@ export async function writeLicenseState(state: LicenseState): Promise<void> {
 /** 캐시가 없거나 재확인 주기가 지났는지 — background의 온라인 확인 트리거 조건으로 사용 */
 export function needsRecheck(state: LicenseState): boolean {
   return !state.checkedAt || Date.now() - state.checkedAt > LICENSE_RECHECK_MS;
+}
+
+/**
+ * 승인 기반 무료 라이선스로 활성화된 상태인지 — true면 온라인 재확인(ExtensionPay 조회) 대상에서
+ * 제외해야 한다. 이런 상태는 실제 결제 기록이 없어 extpay.getUser()가 "결제 없음"으로 응답하므로,
+ * 그대로 주기적 재확인을 돌리면 승인 무료 사용자가 24시간마다 무료로 되돌아가 버린다(로드맵의
+ * "재사용 가능한... 영구 자격증명" 요구사항과 상충) — licenseManager.ts·background.ts가 이 함수로
+ * 재확인 전 먼저 걸러낸다.
+ */
+export function isLicenseKeyGranted(state: LicenseState): boolean {
+  return state.paid && state.source === 'license-key';
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/**
+ * 라이선스 키+이메일 조합이 approvedLicenses.ts 화이트리스트와 정확히 일치하는지 확인.
+ * 순수 함수(네트워크·chrome API 없음) — 확장·PWA 어느 컨텍스트에서도 안전하게 호출 가능.
+ * 키는 앞뒤 공백만 트리밍해 비교(대소문자 구분), 이메일은 대소문자 구분 없이 비교.
+ */
+export function verifyLicenseKey(key: string, email: string): boolean {
+  const trimmedKey = key.trim();
+  const normalizedEmail = normalizeEmail(email);
+  if (!trimmedKey || !normalizedEmail) return false;
+  return APPROVED_LICENSES.some((entry) => entry.key === trimmedKey && normalizeEmail(entry.email) === normalizedEmail);
 }
 
 // ── 무료 티어 한도 (2026-07-21 유료화 정책 확정 그대로 채택) ─────────

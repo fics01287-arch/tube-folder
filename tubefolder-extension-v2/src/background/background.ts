@@ -16,7 +16,9 @@ import ExtPay from 'extpay';
 import {
   EXTPAY_EXTENSION_ID,
   FREE_DISTRIBUTION_MODE,
+  getCachedLicense,
   isLicenseConfigured,
+  isLicenseKeyGranted,
   LicenseState,
   writeLicenseState
 } from '../license/licenseEngine';
@@ -155,6 +157,9 @@ async function refreshLicense(): Promise<void> {
   // 무료 전환 모드에서는 licenseEngine.getCachedLicense()가 항상 "유료"로 응답하므로,
   // 실제 결제 서버를 조회하는 이 네트워크 호출 자체가 무의미하다 — 조용히 건너뛴다.
   if (FREE_DISTRIBUTION_MODE || !isLicenseConfigured()) return;
+  // 승인 기반 무료 라이선스(3단계)는 ExtensionPay가 알지 못하는 상태라, 그대로 재확인을 돌리면
+  // "결제 없음"으로 오인해 24시간마다 무료로 되돌려버린다 — 영구 자격증명이라 재확인에서 제외.
+  if (isLicenseKeyGranted(await getCachedLicense())) return;
   try {
     const user = await extpay.getUser();
     const state: LicenseState = {

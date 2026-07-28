@@ -335,6 +335,13 @@ body {
   line-height: 1.5;
 }
 
+.tf-license-redeem {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 /* 외부 서비스로 넘어가 사용자 조작을 기다리는 구간 강조 박스 (CLAUDE.md UX 원칙) */
 .tf-sync-highlight {
   border: 1px solid #b58a2c;

@@ -7,7 +7,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FREE_DISTRIBUTION_MODE, getCachedLicense, isLicenseConfigured, LicenseState } from '../license/licenseEngine';
-import { isLicenseAvailable, openLoginPage, openPaymentPage, refreshLicenseFromManager } from '../license/licenseManager';
+import {
+  isLicenseAvailable,
+  openLoginPage,
+  openPaymentPage,
+  redeemLicenseKey,
+  refreshLicenseFromManager
+} from '../license/licenseManager';
 
 interface Props {
   /** 무료 한도에 걸렸을 때(App.tsx) 이 숫자를 증가시키면 패널이 강제로 열린다 */
@@ -20,6 +26,11 @@ export default function LicenseControl({ openSignal }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [donePopup, setDonePopup] = useState(false);
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [redeemKey, setRedeemKey] = useState('');
+  const [redeemEmail, setRedeemEmail] = useState('');
+  const [redeemBusy, setRedeemBusy] = useState(false);
+  const [redeemError, setRedeemError] = useState<string | null>(null);
   const pendingPurchase = useRef(false);
   const mounted = useRef(true);
 
@@ -89,6 +100,29 @@ export default function LicenseControl({ openSignal }: Props) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // 승인 기반 무료 라이선스(3단계) — 산들이 지인·홍보 대상에게 직접 전달한 키+이메일 조합을 검증한다.
+  // 결제와 달리 새 탭으로 나가지 않고 이 패널 안에서 즉시 완료된다(외부 서비스 이동 없음).
+  async function handleRedeem() {
+    setRedeemError(null);
+    setRedeemBusy(true);
+    try {
+      const result = await redeemLicenseKey(redeemKey, redeemEmail);
+      if (result.ok) {
+        setState(result.state);
+        setRedeemOpen(false);
+        setRedeemKey('');
+        setRedeemEmail('');
+        setDonePopup(true);
+      } else {
+        setRedeemError('키 또는 이메일이 일치하지 않습니다. 다시 확인해 주세요.');
+      }
+    } catch (e) {
+      setRedeemError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRedeemBusy(false);
     }
   }
 
@@ -202,6 +236,58 @@ export default function LicenseControl({ openSignal }: Props) {
                   다른 기기·재설치 후에도 결제할 때 쓴 이메일로 "복원"하면 다시 결제하지 않고 PRO 상태를 되살릴 수
                   있습니다.
                 </p>
+
+                {redeemOpen ? (
+                  <div className="tf-license-redeem">
+                    <p className="tf-sync-fineprint">
+                      개발자에게 받은 라이선스 키와 이메일을 입력하면 결제 없이 PRO로 전환됩니다.
+                    </p>
+                    <input
+                      className="tf-input"
+                      placeholder="라이선스 키"
+                      value={redeemKey}
+                      onChange={(e) => setRedeemKey(e.target.value)}
+                      disabled={redeemBusy}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleRedeem();
+                      }}
+                    />
+                    <input
+                      className="tf-input"
+                      placeholder="이메일"
+                      value={redeemEmail}
+                      onChange={(e) => setRedeemEmail(e.target.value)}
+                      disabled={redeemBusy}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleRedeem();
+                      }}
+                    />
+                    {redeemError && <div className="tf-error-banner">{redeemError}</div>}
+                    <div className="tf-sync-actions">
+                      <button
+                        className="tf-btn"
+                        onClick={handleRedeem}
+                        disabled={redeemBusy || !redeemKey.trim() || !redeemEmail.trim()}
+                      >
+                        {redeemBusy ? '확인 중...' : '확인'}
+                      </button>
+                      <button
+                        className="tf-btn"
+                        onClick={() => {
+                          setRedeemOpen(false);
+                          setRedeemError(null);
+                        }}
+                        disabled={redeemBusy}
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="tf-btn tf-btn-icon" onClick={() => setRedeemOpen(true)}>
+                    🔑 라이선스 키가 있으신가요?
+                  </button>
+                )}
               </>
             )}
           </div>

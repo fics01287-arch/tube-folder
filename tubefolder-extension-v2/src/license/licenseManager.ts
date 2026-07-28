@@ -11,7 +11,9 @@ import {
   getCachedLicense,
   isExtensionContext,
   isLicenseConfigured,
+  isLicenseKeyGranted,
   LicenseState,
+  verifyLicenseKey,
   writeLicenseState
 } from './licenseEngine';
 
@@ -35,6 +37,10 @@ export async function refreshLicenseFromManager(): Promise<LicenseState> {
   // 무료 전환 모드에서는 실제 결제 서버 조회가 무의미하므로(어차피 항상 "유료"로 응답),
   // 네트워크 호출 없이 바로 그 오버라이드 상태를 반환한다.
   if (FREE_DISTRIBUTION_MODE) return getCachedLicense();
+  const cached = await getCachedLicense();
+  // 승인 기반 무료 라이선스는 ExtensionPay가 알지 못하는 상태(실제 결제 기록 없음)라, 그대로 온라인
+  // 재확인을 돌리면 "결제 없음"으로 오인해 무료로 되돌려버린다 — 영구 자격증명이라 재확인에서 제외.
+  if (isLicenseKeyGranted(cached)) return cached;
   if (!isLicenseAvailable()) return FREE_LICENSE_STATE;
   try {
     const extpay = await getInstance();
@@ -63,4 +69,26 @@ export async function openPaymentPage(): Promise<void> {
 export async function openLoginPage(): Promise<void> {
   const extpay = await getInstance();
   await extpay.openLoginPage();
+}
+
+/**
+ * 승인 기반 무료 라이선스 활성화 — 키+이메일이 approvedLicenses.ts 화이트리스트와 일치하면 즉시
+ * paid:true로 저장한다(네트워크 호출 없음, ExtensionPay 미사용). 결제와 마찬가지로 저장 구조
+ * (LICENSE_STORAGE_KEY)를 그대로 재사용하되 근거만 source:'license-key'로 다르게 남겨,
+ * 이후 온라인 재확인(refreshLicenseFromManager)이 이 상태를 되돌리지 않도록 한다.
+ */
+export async function redeemLicenseKey(key: string, email: string): Promise<{ ok: boolean; state: LicenseState }> {
+  if (!verifyLicenseKey(key, email)) {
+    return { ok: false, state: await getCachedLicense() };
+  }
+  const state: LicenseState = {
+    paid: true,
+    email: email.trim(),
+    paidAt: Date.now(),
+    checkedAt: Date.now(),
+    lastCheckFailed: false,
+    source: 'license-key'
+  };
+  await writeLicenseState(state);
+  return { ok: true, state };
 }
