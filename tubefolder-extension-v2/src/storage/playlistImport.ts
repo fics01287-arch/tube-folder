@@ -5,6 +5,12 @@
 // 초기 렌더 데이터, YouTube 웹 페이지 자체가 쓰는 것과 동일)를 읽어 videoId·제목·채널명을 추출한다.
 // 100개 초과분은 continuation 토큰 + 페이지에 내장된 공개 웹 클라이언트 키로 이어서 가져온다
 // (개인 계정 인증이 필요한 정보가 아니라 재생목록 페이지 자체가 이미 공개하는 데이터).
+//
+// YouTube 의존 지점 중 URL·HTML 스크래핑 정규식은 src/shared/youtubeSelectors.ts로 모아 관리한다
+// (구조 변경 시 그 파일만 고치면 됨). 아래 ytInitialData JSON 트리 탐색(extract* 함수들)은 평면
+// 선택자가 아니라 다단계 파싱 절차라 이 파일에 그대로 두되, 실패 시 예외 없이 부분 결과를 반환한다.
+
+import { youtubePattern, youtubeUrl } from '../shared/youtubeSelectors';
 
 export interface PlaylistVideo {
   videoId: string;
@@ -114,7 +120,7 @@ export class PlaylistImportError extends Error {}
 export async function fetchPlaylistVideos(playlistId: string, onProgress?: ProgressCallback): Promise<PlaylistVideo[]> {
   let pageRes: Response;
   try {
-    pageRes = await fetch(`https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`, {
+    pageRes = await fetch(youtubeUrl.playlist(playlistId), {
       credentials: 'omit'
     });
   } catch {
@@ -125,7 +131,7 @@ export async function fetchPlaylistVideos(playlistId: string, onProgress?: Progr
   }
   const html = await pageRes.text();
 
-  const dataMatch = html.match(/(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{.+?\})\s*;\s*(?:<\/script>|var |window\[)/s);
+  const dataMatch = html.match(youtubePattern.ytInitialData);
   if (!dataMatch) {
     throw new PlaylistImportError('재생목록 정보를 읽을 수 없습니다. 목록이 비공개이거나 URL이 올바르지 않을 수 있습니다.');
   }
@@ -150,8 +156,8 @@ export async function fetchPlaylistVideos(playlistId: string, onProgress?: Progr
 
   let continuation = first.continuation;
   if (continuation) {
-    const apiKeyMatch = html.match(/"INNERTUBE_API_KEY":"([^"]+)"/);
-    const clientVersionMatch = html.match(/"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"/);
+    const apiKeyMatch = html.match(youtubePattern.innertubeApiKey);
+    const clientVersionMatch = html.match(youtubePattern.innertubeClientVersion);
 
     if (apiKeyMatch && clientVersionMatch) {
       const apiKey = apiKeyMatch[1];
@@ -160,7 +166,7 @@ export async function fetchPlaylistVideos(playlistId: string, onProgress?: Progr
 
       while (continuation && page < MAX_CONTINUATION_PAGES) {
         page++;
-        const res = await fetch(`https://www.youtube.com/youtubei/v1/browse?key=${encodeURIComponent(apiKey)}`, {
+        const res = await fetch(youtubeUrl.browseApi(apiKey), {
           method: 'POST',
           credentials: 'omit',
           headers: { 'Content-Type': 'application/json' },

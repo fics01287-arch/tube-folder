@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { updatePlaybackPosition } from '../storage/folderOps';
 import type { VideoNode } from '../storage/types';
+import { YT_ORIGIN, youtubeUrl } from '../shared/youtubeSelectors';
 
-const YT_ORIGIN = 'https://www.youtube.com';
 const SAVE_INTERVAL_MS = 7000;
 const PLAYER_STATE_ENDED = 0;
 const PLAYER_STATE_PAUSED = 2;
@@ -108,7 +108,7 @@ export default function PlayerOverlay({ video, onClose }: PlayerOverlayProps) {
   if (!videoId) return null;
 
   const start = Math.floor(video.lastPosition || 0);
-  const src = `${YT_ORIGIN}/embed/${videoId}?enablejsapi=1&autoplay=1&start=${start}`;
+  const src = youtubeUrl.embed(videoId, start);
 
   return (
     <div className="tf-player-overlay" onClick={() => void handleClose()}>

@@ -6,6 +6,7 @@
 import type { FolderNode, TubeNode, TubeStoreData } from './types';
 import { FREE_VIDEO_LIMIT, isPaidCached, LicenseLimitError } from '../license/licenseEngine';
 import { isLicenseAvailable } from '../license/licenseManager';
+import { MUSIC_HOST_MARKER, youtubePattern, youtubeUrl } from '../shared/youtubeSelectors';
 
 const KEY = 'tubefolder_v1';
 // v1(=1)에서 노드에 schemaVersion·deviceId·version 동기화 메타데이터 필드를 추가하며 2로 상향
@@ -210,12 +211,12 @@ export function extractVideoId(url: string | null | undefined): string | null {
 // — 재생시간 하나 때문에 영상 추가 자체가 실패하면 안 됨(fetchMeta와 동일한 관용적 실패 정책).
 export async function fetchDuration(videoId: string): Promise<number> {
   try {
-    const res = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`, {
+    const res = await fetch(youtubeUrl.watch(videoId), {
       credentials: 'omit'
     });
     if (!res.ok) return 0;
     const html = await res.text();
-    const m = html.match(/"lengthSeconds":"(\d+)"/);
+    const m = html.match(youtubePattern.lengthSeconds);
     return m ? parseInt(m[1], 10) || 0 : 0;
   } catch {
     return 0;
@@ -224,7 +225,7 @@ export async function fetchDuration(videoId: string): Promise<number> {
 
 export async function fetchMeta(url: string): Promise<{ title: string; channel: string } | null> {
   try {
-    const r = await fetch('https://www.youtube.com/oembed?url=' + encodeURIComponent(url) + '&format=json');
+    const r = await fetch(youtubeUrl.oembed(url));
     if (r.ok) {
       const j = await r.json();
       if (j && j.title) return { title: j.title, channel: j.author_name || '' };
@@ -233,7 +234,7 @@ export async function fetchMeta(url: string): Promise<{ title: string; channel: 
     // youtube.com 직통 실패 시 noembed로 폴백(아래)
   }
   try {
-    const r2 = await fetch('https://noembed.com/embed?url=' + encodeURIComponent(url));
+    const r2 = await fetch(youtubeUrl.noembed(url));
     if (r2.ok) {
       const j2 = await r2.json();
       if (j2 && j2.title) return { title: j2.title, channel: j2.author_name || '' };
@@ -296,8 +297,8 @@ export async function addVideoToFolder(opts: AddVideoOptions): Promise<string> {
     name: uniqueName(siblings, opts.title || opts.url),
     videoId: vid,
     url: opts.url,
-    thumb: vid ? `https://i.ytimg.com/vi/${vid}/mqdefault.jpg` : '',
-    kind: opts.kind || (String(opts.url).indexOf('music.youtube') >= 0 ? 'music' : 'video'),
+    thumb: vid ? youtubeUrl.thumbnail(vid) : '',
+    kind: opts.kind || (String(opts.url).indexOf(MUSIC_HOST_MARKER) >= 0 ? 'music' : 'video'),
     channel: opts.channel || '',
     duration: opts.duration || 0,
     createdAt: t,

@@ -10,7 +10,7 @@ import { addVideoToFolder, extractVideoId, fetchDuration, fetchMeta, load, STORA
 import { folderChildren } from '../storage/folderOps';
 import type { TubeStoreData } from '../storage/types';
 import type { ContentToBackgroundMessage } from '../shared/messages';
-import { YOUTUBE_DOCUMENT_PATTERNS } from '../shared/hostPatterns';
+import { MUSIC_HOST_MARKER, YOUTUBE_DOCUMENT_PATTERNS } from '../shared/youtubeSelectors';
 import * as syncEngine from '../sync/syncEngine';
 import ExtPay from 'extpay';
 import {
@@ -272,7 +272,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         url,
         title,
         videoId: vid,
-        kind: url.indexOf('music.youtube') >= 0 ? 'music' : 'video',
+        kind: url.indexOf(MUSIC_HOST_MARKER) >= 0 ? 'music' : 'video',
         channel: meta?.channel || '',
         duration,
         folderId

@@ -6,6 +6,7 @@ import type { FolderNode, TubeNode, TubeStoreData, VideoNode } from './types';
 import { load, save, now, uid, uniqueName, newNodeMeta, touch } from './storage';
 import { FREE_FOLDER_LIMIT, FREE_VIDEO_LIMIT, isPaidCached, LicenseLimitError } from '../license/licenseEngine';
 import { isLicenseAvailable } from '../license/licenseManager';
+import { youtubeUrl } from '../shared/youtubeSelectors';
 
 // 무료/유료 한도는 isLicenseAvailable()(확장 컨텍스트 + 결제 설정 완료)일 때만 적용한다. PWA는
 // "PWA에 결제 확인 붙이기"(별도 로드맵 항목) 이전까지 유료 여부를 확인할 방법이 없어, 여기서 한도를
@@ -182,7 +183,7 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
       name: uniqueName(siblings, title),
       videoId: v.videoId,
       url: v.url,
-      thumb: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
+      thumb: youtubeUrl.thumbnail(v.videoId),
       kind: v.kind || 'video',
       channel: v.channel || '',
       duration: v.duration || 0,

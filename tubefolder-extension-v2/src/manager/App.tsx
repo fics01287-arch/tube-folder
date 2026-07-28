@@ -12,6 +12,7 @@ import {
   trashFolder
 } from '../storage/folderOps';
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
+import { youtubeUrl } from '../shared/youtubeSelectors';
 import { isVideo } from '../storage/types';
 import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
 import PlayerOverlay from './PlayerOverlay';
@@ -303,7 +304,7 @@ export default function App() {
       const result = await addVideosToFolder(
         currentFolderId,
         videos.map((v) => ({
-          url: `https://www.youtube.com/watch?v=${v.videoId}`,
+          url: youtubeUrl.watch(v.videoId),
           videoId: v.videoId,
           title: v.title,
           channel: v.channel,
