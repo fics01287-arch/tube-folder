@@ -14,6 +14,7 @@ import {
   redeemLicenseKey,
   refreshLicenseFromManager
 } from '../license/licenseManager';
+import { useEscapeClose } from './useEscapeClose';
 
 interface Props {
   /** 무료 한도에 걸렸을 때(App.tsx) 이 숫자를 증가시키면 패널이 강제로 열린다 */
@@ -72,6 +73,13 @@ export default function LicenseControl({ openSignal }: Props) {
   // 아직 플레이스홀더인 동안(또는 PWA)에는 원래 이 배지 전체가 숨겨진다. 하지만 무료 전환 모드
   // (FREE_DISTRIBUTION_MODE)는 애초에 결제 시스템 설정 여부와 무관하게 "무료"를 알려야 하므로,
   // 이 경우엔 그 조건을 건너뛰고 플랫폼(확장/PWA) 상관없이 항상 배지를 보여준다.
+  // 접근성 보강(ROADMAP 4단계) — 배경 클릭 외에 Esc 키로도 패널/팝업을 닫을 수 있게 한다.
+  useEscapeClose(panelOpen, () => setPanelOpen(false));
+  useEscapeClose(donePopup, () => {
+    setDonePopup(false);
+    setPanelOpen(false);
+  });
+
   if (!FREE_DISTRIBUTION_MODE && !isLicenseAvailable()) return null; // PWA 등 미지원 컨텍스트에서는 조용히 숨김
   if (!state) return null;
 
@@ -157,8 +165,14 @@ export default function LicenseControl({ openSignal }: Props) {
 
       {panelOpen && (
         <div className="tf-sync-overlay" onClick={() => setPanelOpen(false)}>
-          <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
-            <h2>{FREE_DISTRIBUTION_MODE ? '🎁 튜브폴더' : '✨ 튜브폴더 PRO'}</h2>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-license-panel-title"
+          >
+            <h2 id="tf-license-panel-title">{FREE_DISTRIBUTION_MODE ? '🎁 튜브폴더' : '✨ 튜브폴더 PRO'}</h2>
 
             {FREE_DISTRIBUTION_MODE ? (
               <>
@@ -190,7 +204,7 @@ export default function LicenseControl({ openSignal }: Props) {
                 <p className="tf-sync-fineprint">
                   폴더·영상 개수 제한 해제, 클라우드 동기화, 재생목록 대량 가져오기를 모두 사용할 수 있습니다.
                 </p>
-                {error && <div className="tf-error-banner">{error}</div>}
+                {error && <div className="tf-error-banner" role="alert">{error}</div>}
                 <div className="tf-sync-actions">
                   <button className="tf-btn" onClick={handleManualRefresh} disabled={busy}>
                     {busy ? '확인 중...' : '상태 새로고침'}
@@ -219,7 +233,7 @@ export default function LicenseControl({ openSignal }: Props) {
                   </ol>
                 </div>
 
-                {error && <div className="tf-error-banner">{error}</div>}
+                {error && <div className="tf-error-banner" role="alert">{error}</div>}
 
                 <div className="tf-sync-actions">
                   <button className="tf-btn tf-btn-primary" onClick={handleBuy} disabled={busy}>
@@ -244,6 +258,7 @@ export default function LicenseControl({ openSignal }: Props) {
                     </p>
                     <input
                       className="tf-input"
+                      aria-label="라이선스 키"
                       placeholder="라이선스 키"
                       value={redeemKey}
                       onChange={(e) => setRedeemKey(e.target.value)}
@@ -254,6 +269,7 @@ export default function LicenseControl({ openSignal }: Props) {
                     />
                     <input
                       className="tf-input"
+                      aria-label="이메일"
                       placeholder="이메일"
                       value={redeemEmail}
                       onChange={(e) => setRedeemEmail(e.target.value)}
@@ -262,7 +278,7 @@ export default function LicenseControl({ openSignal }: Props) {
                         if (e.key === 'Enter') handleRedeem();
                       }}
                     />
-                    {redeemError && <div className="tf-error-banner">{redeemError}</div>}
+                    {redeemError && <div className="tf-error-banner" role="alert">{redeemError}</div>}
                     <div className="tf-sync-actions">
                       <button
                         className="tf-btn"
@@ -296,8 +312,8 @@ export default function LicenseControl({ openSignal }: Props) {
 
       {donePopup && (
         <div className="tf-sync-overlay tf-sync-overlay-top">
-          <div className="tf-sync-popup">
-            <h3>✨ PRO 활성화 완료</h3>
+          <div className="tf-sync-popup" role="dialog" aria-modal="true" aria-labelledby="tf-license-donepopup-title">
+            <h3 id="tf-license-donepopup-title">✨ PRO 활성화 완료</h3>
             <p>이제 폴더·영상 개수 제한 없이, 클라우드 동기화도 사용할 수 있습니다.</p>
             <button
               className="tf-btn tf-btn-primary"

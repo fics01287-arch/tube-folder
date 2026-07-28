@@ -3,9 +3,13 @@
 
 import { useState } from 'react';
 import { APP_VERSION, DEVELOPER_NAME, INITIAL_DEV_DATE, LAST_MODIFIED_DATE } from '../appInfo';
+import { useEscapeClose } from './useEscapeClose';
 
 export default function AppInfo() {
   const [open, setOpen] = useState(false);
+
+  // 접근성 보강(ROADMAP 4단계) — 배경 클릭 외에 Esc 키로도 패널을 닫을 수 있게 한다.
+  useEscapeClose(open, () => setOpen(false));
 
   return (
     <div className="tf-sync">
@@ -15,8 +19,14 @@ export default function AppInfo() {
 
       {open && (
         <div className="tf-sync-overlay" onClick={() => setOpen(false)}>
-          <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
-            <h2>튜브폴더 정보</h2>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-appinfo-title"
+          >
+            <h2 id="tf-appinfo-title">튜브폴더 정보</h2>
             <p className="tf-sync-desc">
               개발자: {DEVELOPER_NAME}
               <br />

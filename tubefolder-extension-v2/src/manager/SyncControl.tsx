@@ -19,6 +19,7 @@ import {
 import { getCachedLicense } from '../license/licenseEngine';
 import { isLicenseAvailable, openPaymentPage } from '../license/licenseManager';
 import { preloadGis } from '../sync/googleIdentityWeb';
+import { useEscapeClose } from './useEscapeClose';
 
 function formatAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -151,6 +152,13 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
     }
   }
 
+  // 접근성 보강(ROADMAP 4단계) — 배경 클릭 외에 Esc 키로도 패널/팝업을 닫을 수 있게 한다.
+  useEscapeClose(panelOpen, () => setPanelOpen(false));
+  useEscapeClose(donePopup, () => {
+    setDonePopup(false);
+    setPanelOpen(false);
+  });
+
   if (!state) return null;
 
   // 툴바 배지 상태 결정(원칙 ①·②)
@@ -187,15 +195,15 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
       >
         {badgeText}
       </button>
-      <button className="tf-btn tf-btn-icon" onClick={() => setPanelOpen(true)} title="동기화 설정">
+      <button className="tf-btn tf-btn-icon" onClick={() => setPanelOpen(true)} title="동기화 설정" aria-label="동기화 설정">
         ⚙️
       </button>
 
       {/* ① 수동 실패 즉시 알림 배너 (패널 밖에서도 보임) */}
       {manualError && !panelOpen && (
-        <div className="tf-error-banner tf-sync-error">
+        <div className="tf-error-banner tf-sync-error" role="alert">
           동기화 실패: {manualError}
-          <button className="tf-btn tf-btn-icon" onClick={() => setManualError(null)} title="닫기">
+          <button className="tf-btn tf-btn-icon" onClick={() => setManualError(null)} title="닫기" aria-label="닫기">
             ✕
           </button>
         </div>
@@ -203,8 +211,14 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
 
       {panelOpen && (
         <div className="tf-sync-overlay" onClick={() => setPanelOpen(false)}>
-          <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
-            <h2>☁️ 기기 간 동기화</h2>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-sync-panel-title"
+          >
+            <h2 id="tf-sync-panel-title">☁️ 기기 간 동기화</h2>
 
             {!paid ? (
               <>
@@ -212,7 +226,7 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
                   클라우드 동기화는 PRO 전용 기능입니다. 업그레이드하면 폴더·영상 개수 제한 없이 여러 기기에서
                   자동으로 동기화할 수 있습니다.
                 </p>
-                {manualError && <div className="tf-error-banner">{manualError}</div>}
+                {manualError && <div className="tf-error-banner" role="alert">{manualError}</div>}
                 <div className="tf-sync-actions">
                   <button
                     className="tf-btn tf-btn-primary"
@@ -261,7 +275,7 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
                   </ol>
                 </div>
 
-                {manualError && <div className="tf-error-banner">연결 실패: {manualError}</div>}
+                {manualError && <div className="tf-error-banner" role="alert">연결 실패: {manualError}</div>}
 
                 <div className="tf-sync-actions">
                   <button className="tf-btn tf-btn-primary" onClick={handleConnect} disabled={connectBusy}>
@@ -287,7 +301,7 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
                   )}
                 </p>
 
-                {manualError && <div className="tf-error-banner">동기화 실패: {manualError}</div>}
+                {manualError && <div className="tf-error-banner" role="alert">동기화 실패: {manualError}</div>}
 
                 <div className="tf-sync-actions">
                   {state.authRequired ? (
@@ -318,8 +332,8 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
       {/* ④ⓒ 완료 고지 팝업 — 설정 패널보다 위(우선순위 분리), 확인 시 하위 화면(패널)까지 함께 닫음 */}
       {donePopup && (
         <div className="tf-sync-overlay tf-sync-overlay-top">
-          <div className="tf-sync-popup">
-            <h3>✅ 구글 드라이브 연결 완료</h3>
+          <div className="tf-sync-popup" role="dialog" aria-modal="true" aria-labelledby="tf-sync-donepopup-title">
+            <h3 id="tf-sync-donepopup-title">✅ 구글 드라이브 연결 완료</h3>
             <p>
               이제 폴더·영상 목록이 자동으로 동기화됩니다.
               <br />

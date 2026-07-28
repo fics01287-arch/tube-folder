@@ -15,6 +15,7 @@ import {
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
 import { youtubeUrl } from '../shared/youtubeSelectors';
 import { DEFAULT_FOLDER_ICON, FOLDER_ICON_CATEGORIES } from '../shared/folderIcons';
+import { useEscapeClose } from './useEscapeClose';
 import { isVideo } from '../storage/types';
 import type { TubeNode, TubeStoreData, VideoNode } from '../storage/types';
 import PlayerOverlay from './PlayerOverlay';
@@ -354,6 +355,10 @@ export default function App() {
     }
   }
 
+  // 접근성 보강(ROADMAP 4단계) — 배경 클릭 외에 Esc 키로도 오버레이 패널을 닫을 수 있게 한다.
+  useEscapeClose(!!trashInfoModalFolderId, () => setTrashInfoModalFolderId(null));
+  useEscapeClose(!!iconPickerFolderId, () => setIconPickerFolderId(null));
+
   if (!store || !currentFolder) {
     return (
       <div className="tf-app">
@@ -376,13 +381,19 @@ export default function App() {
         </p>
       </header>
 
-      <nav className="tf-breadcrumb">
+      <nav className="tf-breadcrumb" aria-label="폴더 위치">
         {breadcrumb.map((node, i) => (
           <span key={node.id}>
-            {i > 0 && <span className="tf-breadcrumb-sep"> / </span>}
+            {i > 0 && (
+              <span className="tf-breadcrumb-sep" aria-hidden="true">
+                {' '}
+                /{' '}
+              </span>
+            )}
             <button
               className="tf-breadcrumb-btn"
               disabled={node.id === currentFolderId}
+              aria-current={node.id === currentFolderId ? 'page' : undefined}
               onClick={() => setCurrentFolderId(node.id)}
             >
               {folderIcon(node, store)} {node.name}
@@ -419,6 +430,7 @@ export default function App() {
               </span>
               <select
                 className="tf-input tf-retention-select"
+                aria-label="휴지통 보관 기간"
                 value={store.settings.trashRetentionDays == null ? 'none' : String(store.settings.trashRetentionDays)}
                 onChange={(e) => handleRetentionSelect(e.target.value)}
                 disabled={retentionBusy}
@@ -439,6 +451,7 @@ export default function App() {
         <div className="tf-new-folder">
           <input
             className="tf-input"
+            aria-label="새 폴더 이름"
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             onKeyDown={(e) => {
@@ -456,6 +469,7 @@ export default function App() {
         <div className="tf-import-playlist">
           <input
             className="tf-input"
+            aria-label="유튜브 재생목록 URL"
             value={playlistUrl}
             onChange={(e) => setPlaylistUrl(e.target.value)}
             onKeyDown={(e) => {
@@ -494,7 +508,11 @@ export default function App() {
 
       {importStatus && <div className="tf-import-status">{importStatus}</div>}
 
-      {error && <div className="tf-error-banner">{error}</div>}
+      {error && (
+        <div className="tf-error-banner" role="alert">
+          {error}
+        </div>
+      )}
 
       <ul className="tf-list">
         {children.length === 0 && <li className="tf-empty">비어 있습니다.</li>}
@@ -508,6 +526,7 @@ export default function App() {
                   <span className="tf-edit-row">
                     <input
                       className="tf-input tf-input-inline"
+                      aria-label="폴더 이름 수정"
                       value={editingValue}
                       autoFocus
                       onChange={(e) => setEditingValue(e.target.value)}
@@ -516,10 +535,20 @@ export default function App() {
                         if (e.key === 'Escape') setEditingId(null);
                       }}
                     />
-                    <button className="tf-btn tf-btn-icon" onClick={() => commitRename(node.id)} title="저장">
+                    <button
+                      className="tf-btn tf-btn-icon"
+                      onClick={() => commitRename(node.id)}
+                      title="저장"
+                      aria-label="저장"
+                    >
                       ✔
                     </button>
-                    <button className="tf-btn tf-btn-icon" onClick={() => setEditingId(null)} title="취소">
+                    <button
+                      className="tf-btn tf-btn-icon"
+                      onClick={() => setEditingId(null)}
+                      title="취소"
+                      aria-label="취소"
+                    >
                       ✕
                     </button>
                   </span>
@@ -559,7 +588,12 @@ export default function App() {
 
               {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && (
                 <span className="tf-row-actions">
-                  <button className="tf-btn tf-btn-icon" onClick={() => setIconPickerFolderId(node.id)} title="아이콘 변경">
+                  <button
+                    className="tf-btn tf-btn-icon"
+                    onClick={() => setIconPickerFolderId(node.id)}
+                    title="아이콘 변경"
+                    aria-label={`"${node.name}" 아이콘 변경`}
+                  >
                     🎨
                   </button>
                   <button
@@ -569,10 +603,16 @@ export default function App() {
                       setEditingValue(node.name);
                     }}
                     title="이름 변경"
+                    aria-label={`"${node.name}" 이름 변경`}
                   >
                     ✏️
                   </button>
-                  <button className="tf-btn tf-btn-danger-outline" onClick={() => handleTrashClick(node.id)} title="휴지통으로 이동">
+                  <button
+                    className="tf-btn tf-btn-danger-outline"
+                    onClick={() => handleTrashClick(node.id)}
+                    title="휴지통으로 이동"
+                    aria-label={`"${node.name}" 휴지통으로 이동`}
+                  >
                     🗑
                   </button>
                 </span>
@@ -586,8 +626,14 @@ export default function App() {
 
       {iconPickerFolderId && store && (
         <div className="tf-sync-overlay" onClick={() => setIconPickerFolderId(null)}>
-          <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
-            <h2>🎨 폴더 아이콘 선택</h2>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-iconpicker-title"
+          >
+            <h2 id="tf-iconpicker-title">🎨 폴더 아이콘 선택</h2>
             <p className="tf-sync-desc">"{store.nodes[iconPickerFolderId]?.name}" 폴더에 사용할 아이콘을 골라주세요.</p>
             <div className="tf-icon-picker">
               {FOLDER_ICON_CATEGORIES.map((cat) => (
@@ -600,6 +646,7 @@ export default function App() {
                         className="tf-icon-picker-item"
                         onClick={() => handlePickIcon(iconPickerFolderId, icon)}
                         title={icon}
+                        aria-label={`${cat.label} ${icon}`}
                       >
                         {icon}
                       </button>
@@ -622,8 +669,14 @@ export default function App() {
 
       {trashInfoModalFolderId && store && (
         <div className="tf-sync-overlay" onClick={() => setTrashInfoModalFolderId(null)}>
-          <div className="tf-sync-panel" onClick={(e) => e.stopPropagation()}>
-            <h2>🗑️ 휴지통으로 이동</h2>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-trashinfo-title"
+          >
+            <h2 id="tf-trashinfo-title">🗑️ 휴지통으로 이동</h2>
             <p className="tf-sync-desc">
               "{store.nodes[trashInfoModalFolderId]?.name}" 폴더를 휴지통으로 옮깁니다. 휴지통에 있는 항목은 설정된 보관
               기간이 지나면 자동으로 완전히 삭제됩니다(되돌릴 수 없음).

@@ -9,6 +9,16 @@ body {
   font-family: 'Roboto', 'Malgun Gothic', '맑은 고딕', sans-serif;
 }
 
+/* 접근성 보강(ROADMAP 4단계) — 키보드로 포커스했을 때만(마우스 클릭 시엔 안 뜸) 눈에 띄는 링을
+   명시적으로 준다. 어두운 배경에 다양한 배경색 버튼이 섞여 있어 브라우저 기본 링만으로는 대비가
+   약한 경우가 있어, 앱 강조색(#3ea6ff)으로 통일한다. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #3ea6ff;
+  outline-offset: 2px;
+}
+
 .tf-app {
   max-width: 720px;
   margin: 0 auto;

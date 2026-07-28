@@ -112,14 +112,25 @@ export default function PlayerOverlay({ video, onClose }: PlayerOverlayProps) {
 
   return (
     <div className="tf-player-overlay" onClick={() => void handleClose()}>
-      <div className="tf-player-box" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="tf-player-box"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={video.name}
+      >
         <div className="tf-player-toolbar">
           <span className="tf-player-title">{video.name}</span>
           <div className="tf-player-actions">
             <button className="tf-btn tf-btn-icon" onClick={restartFromBeginning} title="처음부터 다시보기">
               ⏮ 처음부터
             </button>
-            <button className="tf-btn tf-btn-icon" onClick={() => void handleClose()} title="닫기 (Esc)">
+            <button
+              className="tf-btn tf-btn-icon"
+              onClick={() => void handleClose()}
+              title="닫기 (Esc)"
+              aria-label="닫기"
+            >
               ✕
             </button>
           </div>
