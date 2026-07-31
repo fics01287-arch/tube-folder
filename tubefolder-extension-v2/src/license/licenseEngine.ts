@@ -1,25 +1,27 @@
-// 유료화(1회 결제, ExtensionPay) — 라이선스 상태 캐시.
+// 유료화(1회 결제, Paddle) — 라이선스 상태 캐시.
 // CLAUDE.md "유료화 대비 개발 원칙" 반영:
 //  - 유료 검증은 최초 실행 시 1회 + 주기적 1회만 온라인 확인, 평상시는 이 캐시로 오프라인 사용 보장.
-//  - 계정 구조는 이메일 기반(ExtensionPay 자체 제공, 별도 계정 시스템을 직접 구현하지 않음).
+//  - 계정 구조는 이메일 기반.
 //
-// 이 파일은 'extpay' 패키지를 import하지 않는다(중요) — extpay는 내부적으로 webextension-polyfill을
-// 쓰는데, 이 폴리필은 브라우저 확장 컨텍스트가 아니면(즉 PWA 빌드에서) 모듈 로드 시점에 즉시 에러를
-// 던진다. src/manager/App.tsx·LicenseControl.tsx는 확장 매니저와 PWA가 공유하는 번들이라, 여기서
-// extpay를 정적 import하면 PWA 빌드 전체가 깨진다. 그래서 캐시 읽기/쓰기(순수 chrome.storage
-// 접근, 항상 안전)만 이 파일에 두고, 실제 extpay 사용(getUser·openPaymentPage 등)은
-// background.ts(정적 import, 확장 전용 번들이라 안전)와 licenseManager.ts(동적 import, 확장
-// 컨텍스트일 때만 실행)로 분리한다.
+// (2026-07-30, ExtensionPay → Paddle 전환) 개발자(산들) 소재국이 Stripe 비지원국이라 ExtensionPay를
+// 더 쓸 수 없어, Merchant of Record이며 한국 판매자를 지원하는 Paddle로 교체했다. 다만 Paddle
+// Billing은 ExtensionPay의 getUser()처럼 클라이언트에서 바로 호출 가능한 "결제 여부 조회" API가 없고
+// 웹훅(webhook)으로만 결제 완료를 통지한다 — 그래서 그 웹훅을 대신 받아 이메일→결제여부를 저장해두는
+// 별도 서버(Cloudflare Worker, server/paddle-webhook/) 하나가 새로 필요해졌다(자세한 배경·구조는
+// ROADMAP-CHECKLIST.md "결제 연동 구현" 항목 참고).
 //
-// PWA(비확장) 컨텍스트에서는 아직 미지원 — "PWA에 결제 확인 붙이기"(별도 로드맵 항목) 이전까지는
-// 항상 안전하게 "무료"로 취급한다(가짜 유료 상태를 만드는 것보다 안전한 기본값).
+// 이 확인 방식은 순수 fetch()라 extpay의 webextension-polyfill 문제(확장 전용 API라 PWA에서
+// 모듈 로드 시점에 크래시)가 애초에 없다 — 그래서 background.ts(정적 import)·licenseManager.ts
+// (동적 import)로 나눴던 예전 구조가 더는 필요하지 않다. 다만 PWA 결제 지원 자체는 여전히 별도
+// 로드맵 항목이라(가격 확정 여부와 무관하게 UI 노출 여부는 별개 결정), 이번에는 구조적 걸림돌만
+// 제거해두고 isExtensionContext() 게이트는 그대로 유지한다.
 
 import { APPROVED_LICENSES } from './approvedLicenses';
 
 /**
  * 유료→무료 전환 스위치 (CLAUDE.md "유료→무료 전환 대비 원칙" 반영, 2026-07-27 산들 요청).
  * 이 앱은 유료 판매 목적으로 개발됐지만, 산들이 이후 언제든 "무료로 배포하기"로 결정할 수 있다.
- * 이 값을 true로 바꾸고 재빌드·재배포하면 ExtensionPay 결제 여부와 무관하게 전체 사용자가
+ * 이 값을 true로 바꾸고 재빌드·재배포하면 Paddle 결제 여부와 무관하게 전체 사용자가
  * 모든 기능(폴더·영상 개수 제한 해제, 클라우드 동기화 등)을 무료로 쓸 수 있게 된다.
  * 아래 getCachedLicense() 한 곳만 바꾸면 되도록 설계해, 무료 전환이 특정 파일 하나만 고치면
  * 끝나는 결정으로 남게 했다(코드 곳곳을 뒤져 조건을 하나씩 지울 필요 없음).
@@ -29,14 +31,17 @@ import { APPROVED_LICENSES } from './approvedLicenses';
  */
 export const FREE_DISTRIBUTION_MODE = false;
 
-/** ExtensionPay 대시보드에서 확장을 등록하면 발급되는 식별자로 교체해야 함(README 'ExtensionPay 사용 준비' 참고).
- *  background.ts(정적 import)와 licenseManager.ts(동적 import) 양쪽이 같은 값을 쓰도록 여기 하나로 모은다. */
+/** Paddle 대시보드에서 만든 호스티드 체크아웃 링크(가격이 이미 연결된 상태)로 교체해야 함
+ *  (README 'Paddle 사용 준비' 참고). 여기에 구매자 이메일을 ?user_email= 쿼리로 붙여서 연다. */
 // 타입을 string으로 넓혀 둔다 — 리터럴 타입인 채로 두면 아래 isLicenseConfigured()의 비교식이
-// "항상 참/거짓인 비교"로 오인돼 이 값을 실제 ID로 교체하는 순간 tsc 에러(TS2367)가 난다.
-export const EXTPAY_EXTENSION_ID: string = 'tubefolder';
+// "항상 참/거짓인 비교"로 오인돼 이 값을 실제 URL로 교체하는 순간 tsc 에러(TS2367)가 난다.
+export const PADDLE_CHECKOUT_URL: string = 'REPLACE_ME_PADDLE_CHECKOUT_URL';
+
+/** server/paddle-webhook/ Cloudflare Worker의 /check 엔드포인트 전체 URL로 교체해야 함. */
+export const PADDLE_VERIFY_ENDPOINT: string = 'REPLACE_ME_PADDLE_VERIFY_ENDPOINT';
 
 export function isLicenseConfigured(): boolean {
-  return EXTPAY_EXTENSION_ID !== 'REPLACE_ME_EXTPAY_EXTENSION_ID';
+  return PADDLE_CHECKOUT_URL !== 'REPLACE_ME_PADDLE_CHECKOUT_URL' && PADDLE_VERIFY_ENDPOINT !== 'REPLACE_ME_PADDLE_VERIFY_ENDPOINT';
 }
 
 export const LICENSE_STORAGE_KEY = 'tubefolder_license';
@@ -52,12 +57,12 @@ export interface LicenseState {
   /** 마지막 온라인 확인이 실패했는지(오프라인 등) — 캐시는 유지하되 UI가 참고할 수 있게 남겨둠 */
   lastCheckFailed?: boolean;
   /**
-   * paid=true의 근거. 'extpay'=실제 결제 확인(ExtensionPay), 'license-key'=승인 기반 무료 라이선스
+   * paid=true의 근거. 'paddle'=실제 결제 확인(Paddle), 'license-key'=승인 기반 무료 라이선스
    * (3단계 "승인 기반 무료 라이선스 구현", approvedLicenses.ts 화이트리스트 검증 통과).
-   * 기존 데이터엔 없던 필드라 optional — 없으면 'extpay'로 간주(하위호환). 스토어 노드 스키마가 아니라
+   * 기존 데이터엔 없던 필드라 optional — 없으면 'paddle'로 간주(하위호환). 스토어 노드 스키마가 아니라
    * 별도 storage 키(LICENSE_STORAGE_KEY)의 값이라 DATA_VERSION 마이그레이션과 무관하게 optional 추가만으로 충분.
    */
-  source?: 'extpay' | 'license-key';
+  source?: 'paddle' | 'license-key';
 }
 
 export const FREE_LICENSE_STATE: LicenseState = { paid: false, email: null, paidAt: null, checkedAt: 0 };
@@ -97,8 +102,8 @@ export function needsRecheck(state: LicenseState): boolean {
 }
 
 /**
- * 승인 기반 무료 라이선스로 활성화된 상태인지 — true면 온라인 재확인(ExtensionPay 조회) 대상에서
- * 제외해야 한다. 이런 상태는 실제 결제 기록이 없어 extpay.getUser()가 "결제 없음"으로 응답하므로,
+ * 승인 기반 무료 라이선스로 활성화된 상태인지 — true면 온라인 재확인(Paddle 조회) 대상에서
+ * 제외해야 한다. 이런 상태는 실제 결제 기록이 없어 Paddle 웹훅이 발급한 기록이 없으므로,
  * 그대로 주기적 재확인을 돌리면 승인 무료 사용자가 24시간마다 무료로 되돌아가 버린다(로드맵의
  * "재사용 가능한... 영구 자격증명" 요구사항과 상충) — licenseManager.ts·background.ts가 이 함수로
  * 재확인 전 먼저 걸러낸다.

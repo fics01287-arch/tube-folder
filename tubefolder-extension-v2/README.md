@@ -38,7 +38,7 @@ tubefolder-extension-v2/
    ├─ manager/            매니저 페이지(React) — 현재는 최소 스캐폴딩(트리 탐색 골격만). 확장·PWA 공용.
    ├─ sync/               동기화 — merge.ts(순수 병합)·syncEngine.ts(트리거)·driveBackendBase.ts(Drive REST 공용)
    │                       ·googleDrive.ts(확장, chrome.identity)·googleDriveWeb.ts+googleIdentityWeb.ts(PWA, GIS)
-   ├─ license/            유료화(ExtensionPay) — licenseEngine.ts(캐시, 공용 안전)·licenseManager.ts(구매/복원, extpay 동적 import)
+   ├─ license/            유료화(Paddle) — licenseEngine.ts(캐시·상수, 공용 안전)·licenseManager.ts(구매/복원, Paddle Worker 조회)
    └─ shared/             background↔content 메시지 타입, 호스트 URL 패턴 상수
 ```
 
@@ -96,21 +96,30 @@ npm run package             # build 후 dist/ 전체를 tubefolder-extension-v2.
 - 크롬 확장(`chrome.identity`)과 달리 GIS는 진짜 리프레시 토큰이 없는 클라이언트 전용 구현이라, 브라우저 세션이 끊기면 확장보다 "재연결 필요"가 더 자주 뜰 수 있습니다(설계상 불가피 — ROADMAP-CHECKLIST.md 해당 항목 참고).
 - 모바일 브라우저는 탭이 백그라운드로 가면 15분 주기 타이머가 지연될 수 있어, PWA는 "앱을 열 때(포그라운드 복귀)" 동기화가 사실상 주력 트리거입니다.
 
-## 유료화(ExtensionPay) 사용 준비 — 개발자 계정 작업 필요
-결제 코드는 구현돼 있지만, 실제로 동작하려면 **ExtensionPay 가입 + Stripe 연결 + 확장 등록**이 필요합니다(무료 가입, 판매 수수료 5%).
+## 유료화(Paddle) 사용 준비 — 개발자 계정 작업 필요
+(2026-07-30, ExtensionPay → Paddle 전환 — 개발자 소재국이 Stripe 비지원국이라 ExtensionPay를 더 쓸 수 없어,
+Merchant of Record이며 한국 판매자를 지원하는 Paddle로 교체했습니다.) 결제 코드는 구현돼 있지만, 실제로
+동작하려면 **Paddle 가입 + 상품/가격 등록 + Cloudflare Worker 배포**가 필요합니다.
 
-1. https://extensionpay.com/signup 에서 가입 → Stripe 계정 연결(없으면 새로 만들기)
-2. ExtensionPay 대시보드에서 "새 확장 추가" → 확장 이름 입력 → 발급되는 **extension id**를 확인
-3. 가격 플랜 추가: 1회 결제(one-time), 금액은 1단계에서 확정한 ₩15,000~20,000 중 하나로 설정
-4. 발급된 extension id를 `src/license/licenseEngine.ts`의 `EXTPAY_EXTENSION_ID` 상수(`REPLACE_ME_EXTPAY_EXTENSION_ID` 자리)에 붙여넣고 `npm run build` 재실행
-   - 이 상수 하나를 두 곳(`background.ts`의 정적 import, `licenseManager.ts`의 동적 import)이 함께 참조하므로 한 곳만 바꾸면 됩니다.
-5. 개발 중에는 ExtensionPay가 자동으로 "테스트 모드"로 동작합니다 — [Stripe 테스트 카드](https://docs.stripe.com/testing)로 결제 흐름을 확인할 수 있고, 대시보드에서 테스트 결제/체험 상태를 리셋하는 링크도 제공됩니다. 스토어에 실제 게시하면 자동으로 테스트 모드에서 빠져나옵니다.
+1. https://www.paddle.com 에서 판매자(Seller) 가입 → 상품(Product) 생성 → 가격(Price)을 **1회성(one-time)**
+   으로 추가, 금액은 1단계에서 확정한 ₩15,000~20,000 중 하나로 설정
+2. Paddle 대시보드 → Checkout → Checkout Links에서 위 가격이 연결된 **호스티드 체크아웃 링크**를 하나 생성
+3. 생성된 링크 전체를 `src/license/licenseEngine.ts`의 `PADDLE_CHECKOUT_URL` 상수
+   (`REPLACE_ME_PADDLE_CHECKOUT_URL` 자리)에 붙여넣기
+4. `server/paddle-webhook/README.md` 절차대로 Cloudflare Worker를 배포하고, 발급된 `/check` URL을
+   `PADDLE_VERIFY_ENDPOINT` 상수(`REPLACE_ME_PADDLE_VERIFY_ENDPOINT` 자리)에 붙여넣은 뒤 `npm run build` 재실행
+5. Paddle은 가입 직후 자동으로 **Sandbox(테스트) 모드**로 동작합니다 — [Paddle 테스트 카드](https://developer.paddle.com/concepts/payment-methods/credit-debit-card#testing)로 결제 흐름을 확인한 뒤, 검증이 끝나면 대시보드에서 라이브 모드로 전환합니다.
 
 참고:
-- 결제 완료 여부 확인(`extpay.getUser()`)은 **최초 실행 시 1회 + 24시간마다 1회**만 온라인으로 확인하고, 나머지는 캐시(`chrome.storage.local`)로 오프라인 동작합니다(CLAUDE.md 유료화 원칙). 결제 직후에는 매니저 탭이 다시 포그라운드로 돌아올 때 한 번 더 즉시 확인합니다.
-- 무료 티어 한도(폴더 20개·영상 500개)와 클라우드 동기화 잠금은 `EXTPAY_EXTENSION_ID`를 실제 값으로 바꾸기 전까지는 걸리지 않습니다(개발 중 테스트 방해 방지) — 실제 값으로 교체한 뒤부터 적용됩니다.
-- 구매 복원(재설치·기기 변경 시 재결제 방지)은 ExtensionPay가 이메일 로그인으로 기본 제공합니다 — 별도 구현 불필요.
-- PWA(휴대폰 매니저) 빌드는 아직 결제 확인을 지원하지 않습니다(별도 로드맵 항목) — 그 전까지 PWA에서는 한도·동기화 잠금이 걸리지 않습니다(의도된 동작).
+- 결제 완료 여부 확인은 **최초 실행 시 1회 + 24시간마다 1회**만 온라인으로 확인하고, 나머지는 캐시(`chrome.storage.local`)로 오프라인 동작합니다(CLAUDE.md 유료화 원칙). 결제 직후에는 매니저 탭이 다시 포그라운드로 돌아올 때 한 번 더 즉시 확인합니다.
+- ExtensionPay의 `getUser()`와 달리 Paddle Billing은 클라이언트에서 바로 "결제 여부"를 물어볼 API가 없어,
+  이메일 기준으로 `server/paddle-webhook/`(Cloudflare Worker)이 대신 Paddle 웹훅을 받아 저장해두고
+  확장이 그 Worker를 조회하는 구조입니다 — 그래서 구매·복원 모두 이메일 입력이 한 단계 더 필요합니다
+  (ExtensionPay는 자체 세션으로 이메일 없이도 조회 가능했던 것과 다른 점).
+- 무료 티어 한도(폴더 20개·영상 500개)와 클라우드 동기화 잠금은 `PADDLE_CHECKOUT_URL`·`PADDLE_VERIFY_ENDPOINT`를
+  실제 값으로 바꾸기 전까지는 걸리지 않습니다(개발 중 테스트 방해 방지) — 실제 값으로 교체한 뒤부터 적용됩니다.
+- 구매 복원(재설치·기기 변경 시 재결제 방지)은 결제에 쓴 이메일을 다시 입력하면 Worker 조회로 즉시 복원됩니다.
+- PWA(휴대폰 매니저) 빌드는 아직 결제 확인을 지원하지 않습니다(별도 로드맵 항목) — 그 전까지 PWA에서는 한도·동기화 잠금이 걸리지 않습니다(의도된 동작). 다만 이번 전환으로 순수 fetch() 기반이 되어, 확장 전용 API에 묶여 있던 예전 구조적 걸림돌은 없어졌습니다(PWA 지원 자체는 여전히 별도 결정 사항).
 
 ## 검증 한계 (알려둘 것)
 - 매니저 페이지(storage 계층 CRUD)는 로컬 브라우저 미리보기(`npm run dev`, localStorage 폴백)로 실제 클릭까지 검증함.
@@ -119,8 +128,8 @@ npm run package             # build 후 dist/ 전체를 tubefolder-extension-v2.
   실제 Chrome에 위 "확장으로 로드해서 확인하기" 절차로 로드해 육안 확인을 권장.
 - PWA 빌드(`build:pwa`)는 이 개발 환경에서 네트워크 제한으로 브라우저를 띄울 수 없어 실제 클릭·GIS 로그인·오프라인 동작을 확인하지 못했음 —
   `tsc`·빌드 성공, 산출물 상대경로·매니페스트·서비스워커 구성만 확인함. 위 "PWA(휴대폰 매니저) 사용 준비" 절차로 실기기에서 검증 필요.
-- 유료화(ExtensionPay) 결제·구매 복원도 같은 이유로 실제 클릭 검증을 못 했음 — `EXTPAY_EXTENSION_ID`가 아직 플레이스홀더라 애초에 실제 결제 자체가 불가능한 상태.
-  `tsc`·빌드 성공, 무료 티어 한도(폴더·영상 개수, 재생목록 캡) 로직은 코드 경로 수동 추적으로 확인함. 위 "유료화(ExtensionPay) 사용 준비" 절차로 실제 가입 후 검증 필요.
+- 유료화(Paddle) 결제·구매 복원도 같은 이유로 실제 클릭 검증을 못 했음 — `PADDLE_CHECKOUT_URL`·`PADDLE_VERIFY_ENDPOINT`가 아직 플레이스홀더라 애초에 실제 결제 자체가 불가능한 상태.
+  `tsc`·빌드 성공, 무료 티어 한도(폴더·영상 개수, 재생목록 캡) 로직은 코드 경로 수동 추적으로 확인함. Cloudflare Worker(`server/paddle-webhook/`)도 실제 배포·웹훅 수신 검증은 못 했음(로컬 서명 검증 로직만 코드 리뷰로 확인). 위 "유료화(Paddle) 사용 준비" 절차로 실제 가입·배포 후 검증 필요.
 
 ## 상태
 - 2단계 첫 항목(우클릭 메뉴 폴더 추가·이름변경·삭제) 구현 완료. 자세한 진행 상황은 [ROADMAP-CHECKLIST.md](ROADMAP-CHECKLIST.md) 참고.

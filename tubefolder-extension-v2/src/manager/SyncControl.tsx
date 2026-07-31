@@ -48,8 +48,8 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
   const mounted = useRef(true);
 
   // 유료화 정책: 클라우드 동기화는 PRO 전용. isLicenseAvailable()이 false인 동안(결제 미설정 개발
-  // 단계이거나, 아직 라이선스 확인을 지원하지 않는 PWA 컨텍스트)은 게이트를 걸지 않는다 — PWA에서
-  // "구매하기" 버튼을 눌러 확장 전용 extpay 모듈을 불러오려다 실패하는 상황을 원천 차단한다.
+  // 단계이거나, 아직 라이선스 확인을 지원하지 않는 PWA 컨텍스트)은 게이트를 걸지 않는다 — "PWA에
+  // 결제 확인 붙이기"(별도 로드맵 항목) 이전까지는 PWA에 결제 UI 자체를 노출하지 않기 위함.
   // syncEngine.connectAndEnable()도 같은 조건(isLicenseConfigured())으로 방어적 체크를 한 번 더 한다.
   useEffect(() => {
     if (!isLicenseAvailable()) return;
@@ -232,10 +232,14 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
                     className="tf-btn tf-btn-primary"
                     disabled={buyBusy}
                     onClick={async () => {
+                      // Paddle은 이메일 기준으로 결제 여부를 확인하므로(licenseManager.ts 참고), 결제 페이지를
+                      // 열기 전에 이메일이 필요하다 — 이 패널은 별도 이메일 입력 필드가 없어 그 자리에서 물어본다.
+                      const email = window.prompt('결제에 사용할 이메일을 입력해 주세요.');
+                      if (!email || !email.trim()) return;
                       setBuyBusy(true);
                       setManualError(null);
                       try {
-                        await openPaymentPage();
+                        await openPaymentPage(email.trim());
                       } catch (e) {
                         setManualError(e instanceof Error ? e.message : String(e));
                       } finally {

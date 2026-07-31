@@ -1,0 +1,8 @@
+name = "tubefolder-paddle-license"
+main = "worker.js"
+compatibility_date = "2026-07-30"
+
+# 배포 후 실제로 생성된 KV 네임스페이스 id로 아래 id를 교체해야 한다(README.md 참고).
+kv_namespaces = [
+  { binding = "LICENSES", id = "REPLACE_ME_KV_NAMESPACE_ID" }
+]

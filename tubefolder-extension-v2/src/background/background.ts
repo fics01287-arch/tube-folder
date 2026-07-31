@@ -12,22 +12,15 @@ import type { TubeStoreData } from '../storage/types';
 import type { ContentToBackgroundMessage } from '../shared/messages';
 import { MUSIC_HOST_MARKER, YOUTUBE_DOCUMENT_PATTERNS } from '../shared/youtubeSelectors';
 import * as syncEngine from '../sync/syncEngine';
-import ExtPay from 'extpay';
 import {
-  EXTPAY_EXTENSION_ID,
   FREE_DISTRIBUTION_MODE,
   getCachedLicense,
   isLicenseConfigured,
   isLicenseKeyGranted,
   LicenseState,
+  PADDLE_VERIFY_ENDPOINT,
   writeLicenseState
 } from '../license/licenseEngine';
-
-// ── 유료화(ExtensionPay) 초기화 — background.ts는 확장 전용 번들이라 정적 import가 안전하다
-// (licenseManager.ts는 매니저 페이지가 PWA와 공유하는 번들이라 동적 import로 분리해 둠).
-// startBackground()는 라이브러리 요구사항상 스크립트 최상위에서 한 번만 호출해야 한다(아래 참고).
-const extpay = ExtPay(EXTPAY_EXTENSION_ID);
-extpay.startBackground();
 
 const MANAGER = 'index.html';
 const CONTEXTS: chrome.contextMenus.ContextType[] = ['page', 'link'];
@@ -157,17 +150,23 @@ async function refreshLicense(): Promise<void> {
   // 무료 전환 모드에서는 licenseEngine.getCachedLicense()가 항상 "유료"로 응답하므로,
   // 실제 결제 서버를 조회하는 이 네트워크 호출 자체가 무의미하다 — 조용히 건너뛴다.
   if (FREE_DISTRIBUTION_MODE || !isLicenseConfigured()) return;
-  // 승인 기반 무료 라이선스(3단계)는 ExtensionPay가 알지 못하는 상태라, 그대로 재확인을 돌리면
+  const cached = await getCachedLicense();
+  // 승인 기반 무료 라이선스(3단계)는 Paddle이 알지 못하는 상태라, 그대로 재확인을 돌리면
   // "결제 없음"으로 오인해 24시간마다 무료로 되돌려버린다 — 영구 자격증명이라 재확인에서 제외.
-  if (isLicenseKeyGranted(await getCachedLicense())) return;
+  if (isLicenseKeyGranted(cached)) return;
+  // 이 기기에서 한 번도 구매·복원을 한 적 없으면(이메일 모름) 조회할 대상이 없다 — 그대로 둔다.
+  if (!cached.email) return;
   try {
-    const user = await extpay.getUser();
+    const res = await fetch(`${PADDLE_VERIFY_ENDPOINT}?email=${encodeURIComponent(cached.email)}`);
+    if (!res.ok) throw new Error(`라이선스 조회 실패 (${res.status})`);
+    const data = (await res.json()) as { paid?: boolean; paidAt?: number };
     const state: LicenseState = {
-      paid: !!user.paid,
-      email: user.email || null,
-      paidAt: user.paidAt ? user.paidAt.getTime() : null,
+      paid: !!data.paid,
+      email: cached.email,
+      paidAt: data.paidAt ?? null,
       checkedAt: Date.now(),
-      lastCheckFailed: false
+      lastCheckFailed: false,
+      source: 'paddle'
     };
     await writeLicenseState(state);
   } catch {

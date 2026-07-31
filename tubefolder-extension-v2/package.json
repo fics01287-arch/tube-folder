@@ -15,7 +15,6 @@
     "package": "npm run build && powershell -NoProfile -Command \"Compress-Archive -Path dist/* -DestinationPath ../tubefolder-extension-v2.zip -Force\""
   },
   "dependencies": {
-    "extpay": "^3.1.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

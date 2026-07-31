@@ -1,18 +1,19 @@
-// 유료화(1회 결제, ExtensionPay) 상태 배지 + 구매/복원 패널.
+// 유료화(1회 결제, Paddle) 상태 배지 + 구매/복원 패널.
 // CLAUDE.md 원칙 반영 지점:
 //  - 유료화 메뉴는 초기 화면에 노출하지 않는다 = 툴바의 조용한 배지 하나로만 존재(SyncControl과 같은 자리·같은 톤)
-//  - 외부 서비스 연동 UX: 켜지 않을 때 결과를 먼저 안내 → 외부(Stripe 결제) 페이지로 넘어가는 구간은
+//  - 외부 서비스 연동 UX: 켜지 않을 때 결과를 먼저 안내 → 외부(Paddle 결제) 페이지로 넘어가는 구간은
 //    강조 박스로 표시 → 돌아왔을 때 상태 변화를 확인 팝업으로 고지
-//  - 구매 복원(재설치 시 재결제 방지): 이메일로 로그인 링크를 받는 openLoginPage()를 그대로 노출
+//  - 구매 복원(재설치 시 재결제 방지): Paddle에는 ExtensionPay 같은 매직링크 로그인이 없어, 결제에
+//    쓴 이메일을 입력하면 즉시 Paddle Worker에 조회하는 방식으로 대체(restoreByEmail)
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FREE_DISTRIBUTION_MODE, getCachedLicense, isLicenseConfigured, LicenseState } from '../license/licenseEngine';
 import {
   isLicenseAvailable,
-  openLoginPage,
   openPaymentPage,
   redeemLicenseKey,
-  refreshLicenseFromManager
+  refreshLicenseFromManager,
+  restoreByEmail
 } from '../license/licenseManager';
 import { useEscapeClose } from './useEscapeClose';
 
@@ -27,17 +28,22 @@ export default function LicenseControl({ openSignal }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [donePopup, setDonePopup] = useState(false);
+  const [email, setEmail] = useState('');
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemKey, setRedeemKey] = useState('');
   const [redeemEmail, setRedeemEmail] = useState('');
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const pendingPurchase = useRef(false);
+  const pendingEmail = useRef('');
   const mounted = useRef(true);
 
   const reload = useCallback(async () => {
     const s = await getCachedLicense();
-    if (mounted.current) setState(s);
+    if (mounted.current) {
+      setState(s);
+      if (s.email) setEmail((prev) => prev || s.email || '');
+    }
   }, []);
 
   useEffect(() => {
@@ -60,7 +66,7 @@ export default function LicenseControl({ openSignal }: Props) {
       if (document.visibilityState !== 'visible' || !pendingPurchase.current) return;
       pendingPurchase.current = false;
       const before = state?.paid;
-      const fresh = await refreshLicenseFromManager();
+      const fresh = await refreshLicenseFromManager(pendingEmail.current || undefined);
       if (mounted.current) setState(fresh);
       if (!before && fresh.paid) setDonePopup(true);
     };
@@ -69,7 +75,7 @@ export default function LicenseControl({ openSignal }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.paid]);
 
-  // isLicenseAvailable()은 "확장 컨텍스트 + ExtensionPay 설정 완료"를 요구하므로, EXTPAY_EXTENSION_ID가
+  // isLicenseAvailable()은 "확장 컨텍스트 + Paddle 설정 완료"를 요구하므로, PADDLE_CHECKOUT_URL이
   // 아직 플레이스홀더인 동안(또는 PWA)에는 원래 이 배지 전체가 숨겨진다. 하지만 무료 전환 모드
   // (FREE_DISTRIBUTION_MODE)는 애초에 결제 시스템 설정 여부와 무관하게 "무료"를 알려야 하므로,
   // 이 경우엔 그 조건을 건너뛰고 플랫폼(확장/PWA) 상관없이 항상 배지를 보여준다.
@@ -84,11 +90,14 @@ export default function LicenseControl({ openSignal }: Props) {
   if (!state) return null;
 
   async function handleBuy() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) return;
     setError(null);
     setBusy(true);
     try {
+      pendingEmail.current = trimmedEmail;
       pendingPurchase.current = true;
-      await openPaymentPage();
+      await openPaymentPage(trimmedEmail);
     } catch (e) {
       pendingPurchase.current = false;
       setError(e instanceof Error ? e.message : String(e));
@@ -98,13 +107,19 @@ export default function LicenseControl({ openSignal }: Props) {
   }
 
   async function handleRestore() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) return;
     setError(null);
     setBusy(true);
     try {
-      pendingPurchase.current = true;
-      await openLoginPage();
+      const fresh = await restoreByEmail(trimmedEmail);
+      setState(fresh);
+      if (fresh.paid) {
+        setDonePopup(true);
+      } else {
+        setError('해당 이메일로 결제된 내역을 찾을 수 없습니다. 결제에 쓴 이메일이 맞는지 확인해 주세요.');
+      }
     } catch (e) {
-      pendingPurchase.current = false;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -138,7 +153,7 @@ export default function LicenseControl({ openSignal }: Props) {
     setError(null);
     setBusy(true);
     try {
-      const fresh = await refreshLicenseFromManager();
+      const fresh = await refreshLicenseFromManager(email.trim() || undefined);
       setState(fresh);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -224,9 +239,18 @@ export default function LicenseControl({ openSignal }: Props) {
                   있습니다.
                 </p>
 
-                {/* 외부(Stripe 결제) 페이지로 넘어가는 구간 — 강조 박스 */}
+                {/* 외부(Paddle 결제) 페이지로 넘어가는 구간 — 강조 박스 */}
                 <div className="tf-sync-highlight">
-                  <strong>구매하기를 누르면 결제 페이지(새 탭)가 열립니다.</strong>
+                  <strong>결제에 사용할 이메일을 입력하고 구매하기를 누르면 결제 페이지(새 탭)가 열립니다.</strong>
+                  <input
+                    className="tf-input"
+                    type="email"
+                    aria-label="결제용 이메일"
+                    placeholder="이메일"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={busy}
+                  />
                   <ol>
                     <li>1회 결제로 평생 사용할 수 있습니다(구독 아님).</li>
                     <li>결제가 끝나면 이 탭으로 돌아오세요 — 자동으로 PRO 상태가 반영됩니다.</li>
@@ -236,10 +260,10 @@ export default function LicenseControl({ openSignal }: Props) {
                 {error && <div className="tf-error-banner" role="alert">{error}</div>}
 
                 <div className="tf-sync-actions">
-                  <button className="tf-btn tf-btn-primary" onClick={handleBuy} disabled={busy}>
+                  <button className="tf-btn tf-btn-primary" onClick={handleBuy} disabled={busy || !email.trim()}>
                     {busy ? '여는 중...' : '💳 구매하기'}
                   </button>
-                  <button className="tf-btn" onClick={handleRestore} disabled={busy}>
+                  <button className="tf-btn" onClick={handleRestore} disabled={busy || !email.trim()}>
                     이미 구매했어요(복원)
                   </button>
                   <button className="tf-btn" onClick={() => setPanelOpen(false)}>
@@ -247,8 +271,8 @@ export default function LicenseControl({ openSignal }: Props) {
                   </button>
                 </div>
                 <p className="tf-sync-fineprint">
-                  다른 기기·재설치 후에도 결제할 때 쓴 이메일로 "복원"하면 다시 결제하지 않고 PRO 상태를 되살릴 수
-                  있습니다.
+                  다른 기기·재설치 후에도 결제할 때 쓴 이메일을 입력하고 "복원"을 누르면 다시 결제하지 않고 PRO 상태를
+                  되살릴 수 있습니다.
                 </p>
 
                 {redeemOpen ? (

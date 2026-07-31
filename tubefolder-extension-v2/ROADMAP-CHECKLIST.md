@@ -33,7 +33,7 @@
 | 2. 핵심 기능 | 이어보기(재생 위치 기억) | 높음 | ✅ 완료 (2026-07-22) — 매니저 내장 iframe 재생 + 자동 이어재생 |
 | 3. 고급 기능 | 모바일 자동 동기화(구글드라이브) | 높음 | ✅ 완료 (2026-07-23) — appDataFolder+LWW 병합, 실확장 OAuth·드라이브 동기화 검증 완료 |
 | 3. 고급 기능 | PWA(휴대폰 매니저)에 동기화 붙이기 | 중간 | ✅ 완료 (2026-07-25) — 산들 실기기(네이버 브라우저)에서 구글 로그인·동기화 실제 클릭 검증 완료 |
-| 3. 고급 기능 | 결제 연동 구현(유료화 실장) | 높음 | 🔧 진행중 (2026-07-25) — ExtensionPay 연동·기능 잠금 구현·빌드 완료, 가입·실기기 검증 대기 |
+| 3. 고급 기능 | 결제 연동 구현(유료화 실장) | 높음 | 🔧 진행중 (2026-07-30) — ExtensionPay→Paddle 전환(Stripe 한국 미지원 확인), Cloudflare Worker 신규 도입, Paddle 가입·Worker 배포·실기기 검증 대기 |
 | 3. 고급 기능 | 유료→무료 전환 스위치 구현 | 낮음 | ✅ 완료 (2026-07-27) — `FREE_DISTRIBUTION_MODE` 상수 하나로 전환, 빌드 시점 스위치 |
 | 3. 고급 기능 | PWA(휴대폰 매니저)에 결제 확인 붙이기 | 중간 | ⬜ 미착수 (신설 2026-07-21) |
 | 3. 고급 기능 | 승인 기반 무료 라이선스 구현 | 중간 | ✅ 완료 (2026-07-29) — 키+이메일 화이트리스트, LicenseControl.tsx 내장 UI |
@@ -206,9 +206,9 @@
   - 배포 위치: `tubefolder-extension-v2/pwa-dist/`를 빌드해 커밋 — 기존 루트 `index.html`(v1로 리다이렉트)은 건드리지 않았으므로 URL은 `.../tubefolder-extension-v2/pwa-dist/`가 됨(가칭, 산들이 원하면 더 나은 경로·랜딩 페이지 연결은 별도 논의).
   - 복잡도: 중간
 
-- [ ] **결제 연동 구현 (유료화 실장)** — 🔧 구현·빌드 완료(2026-07-25), ExtensionPay 가입·실기기 검증 대기
+- [ ] **결제 연동 구현 (유료화 실장)** — 🔧 ExtensionPay→Paddle 전환·재구현 완료(2026-07-30), Paddle 가입·Cloudflare Worker 배포·실기기 검증 대기
   - 전제: 1단계 "유료화 정책 결정" 완료 후 착수 — 이미 완료됨.
-  - **서비스 조사·선정 (2026-07-25, 산들 승인)**: Chrome 자체 인앱결제는 2021년 완전 종료, 부활 계획 없음(재확인함). ExtensionPay·Fungies.io·Dodo Payments 3곳 비교 — **ExtensionPay 채택**. 근거: 크롬 확장 전용 설계로 통합이 가장 간단(서버 코드 불필요), 이메일 기반 로그인이라 "구매 복원" 요구사항이 기본 내장. 수수료 5%(Fungies 0%보다 높음)는 통합 난이도·유지보수 부담이 훨씬 낮은 대가로 감수. 세금 신고는 산들 책임(Dodo처럼 대행 안 해줌) — 5단계 "개인정보처리방침 작성" 항목에서 함께 검토 필요.
+  - **서비스 조사·선정 (2026-07-25, 산들 승인) — ⚠️ 아래 2026-07-30 항목으로 대체됨**: Chrome 자체 인앱결제는 2021년 완전 종료, 부활 계획 없음(재확인함). ExtensionPay·Fungies.io·Dodo Payments 3곳 비교 — **ExtensionPay 채택**. 근거: 크롬 확장 전용 설계로 통합이 가장 간단(서버 코드 불필요), 이메일 기반 로그인이라 "구매 복원" 요구사항이 기본 내장. 수수료 5%(Fungies 0%보다 높음)는 통합 난이도·유지보수 부담이 훨씬 낮은 대가로 감수. 세금 신고는 산들 책임(Dodo처럼 대행 안 해줌) — 5단계 "개인정보처리방침 작성" 항목에서 함께 검토 필요.
   - **구현 내용**:
     - `src/license/licenseEngine.ts`(신규) — 순수 캐시 계층(chrome.storage.local 읽기/쓰기만, 'extpay' 패키지 import 없음). `LICENSE_RECHECK_MS`(24시간)·`FREE_FOLDER_LIMIT`(20)·`FREE_VIDEO_LIMIT`(500) 상수. **'extpay'를 여기서 import하지 않는 이유**: extpay가 내부적으로 쓰는 webextension-polyfill이 확장 컨텍스트가 아니면 모듈 로드 시점에 즉시 에러를 던져서, 매니저 공용 번들(App.tsx 등, 확장·PWA 공유)에 정적 import하면 PWA 빌드 전체가 깨짐.
     - `src/license/licenseManager.ts`(신규) — 매니저 UI에서 쓰는 진입점(`openPaymentPage`·`openLoginPage`·`refreshLicenseFromManager`). `'extpay'`를 **동적** import(`await import('extpay')`)로만 사용 — `isLicenseAvailable()`(확장 컨텍스트 + 결제 설정 완료)이 true일 때만 실제로 실행되므로 PWA에서는 이 코드 자체가 실행되지 않음. 빌드 산출물 확인 결과 Rollup이 이 모듈을 별도 지연 로드 청크(`ExtPay.module-*.js`)로 정상 분리함 — PWA는 이 청크를 아예 내려받지 않음.
@@ -222,7 +222,21 @@
   - **ExtensionPay 확장 등록 완료 (2026-07-28, 산들 로그인 상태에서 Claude in Chrome으로 대신 등록 진행)**: `extensionpay.com/home` 대시보드에서 이미 로그인·"Stripe 고객 포털 활성화"까지 완료돼 있음을 확인 → "Register an extension"으로 확장 등록: 이름 `TubeFolder`, id `tubefolder`, 결제 플랜 KRW 20,000(1단계에서 정한 ₩15,000~20,000 범위 중 산들이 상한값 확정) · 1회 결제(Once-Lifetime). 발급된 id를 `licenseEngine.ts`의 `EXTPAY_EXTENSION_ID`에 반영 → 4개 빌드 재검증(tsc 통과, "구매하기" 버튼 정상 노출 확인) → dist/pwa-dist 재배포·커밋(`dd18fc1`)·푸시 완료.
   - **남은 절차**: 대시보드 3번 "Stripe 계정 연결"이 아직 안 돼 있음 — 은행 계좌·세금 정보 등 금융 정보 입력이 필요해 Claude가 대신 할 수 없는 영역이라 산들이 직접 `extensionpay.com/home`에서 "Connect a Stripe account" 진행 필요. Stripe 연결 전까지는 "구매하기"를 눌러도 실제 결제까지는 못 감(등록만 된 상태) — 실사용자 배포 전 반드시 완료 필요.
   - 🟢 알려진 제약·확인 필요(결함 아님): ①환불 시 `user.paid`가 자동으로 false로 바뀌는지는 ExtensionPay 문서상 구독 기준으로만 명시돼 있어 1회 결제 환불 케이스는 실제 가입 후 확인 필요(코드는 24시간마다·수동 새로고침 시 항상 최신 상태를 다시 받아오므로, ExtensionPay가 반영만 해주면 자동으로 따라감) ②`onPaid` 자동 콜백 대신 "탭 복귀 시 1회 재확인" 방식이라, 결제 후 원래 탭으로 돌아오지 않고 새로고침만 하는 경우 최대 24시간 뒤에나 반영될 수 있음(수동 "상태 새로고침" 버튼으로 즉시 해결 가능) ③PWA(사이트) 배포본은 이번 작업으로 아직 유료 기능을 확인할 방법이 없음 — "PWA에 결제 확인 붙이기" 항목과 함께 해결 예정.
-  - 복잡도: 높음 (외부 서비스 연동 + 검증 로직)
+  - **⚠️ ExtensionPay → Paddle 전환 (2026-07-30, 산들 요청 — Stripe가 대한민국을 지원하지 않는다는 사실이 확인되어 위 ExtensionPay 구현 전체를 더 쓸 수 없게 됨)**: 위 2026-07-25 구현·2026-07-28 확장 등록은 Stripe 연결 전 단계에서 막혔음(대한민국 계좌로는 애초에 "Connect a Stripe account"가 불가능). 공통지침 "앱개발지침 작성용 지침.txt" §7에 신설된 "결제 대행 서비스 선정 시 개발자 국가 지원 여부 확인 원칙"에 따라 재조사 후 **Paddle**(Merchant of Record, 개발자 본인 명의 Stripe 계좌 불필요, 대한민국 판매자 지원 공식 확인됨)로 교체 결정.
+    - **핵심 설계 차이**: ExtensionPay의 `getUser()`는 클라이언트에서 바로 "결제 여부"를 물어볼 수 있었지만(자체 세션 기반, 서버 코드 불필요), Paddle Billing은 이런 API가 없고 웹훅(webhook)으로만 결제 완료를 통지한다. 이 차이 때문에 웹훅을 받아줄 별도 서버가 필요해져, `server/paddle-webhook/`(Cloudflare Worker, 신규)를 추가했다 — Paddle Classic에 있던 "License List"(서버 없이 자동 발급) 기능은 Billing에는 없음을 공식 문서로 확인함.
+    - **결제 확인 방식 결정 (AskUserQuestion으로 3안 제시 후 산들 선택)**: ①서버리스 웹훅(Cloudflare Workers, 자동·즉시 반영, 신규 인프라 필요) ②기존 승인 라이선스 화이트리스트 재사용(서버 없음, 판매마다 수동 재배포 필요) ③정적 파일(GitHub Pages) 방식(서버 코드 없음, 수동 갱신) 중 **①번 채택** — ExtensionPay와 가장 비슷한 사용자 경험(구매 즉시 자동 반영, 이메일로 복원)을 유지하기 위함.
+    - **구현 내용**:
+      - `server/paddle-webhook/worker.js`(신규) — `POST /webhook`(Paddle-Signature 헤더를 HMAC-SHA256으로 검증 후 `transaction.completed` 이벤트의 구매자 이메일을 KV에 `{paid:true, paidAt, transactionId}`로 저장), `GET /check?email=`(확장이 조회). `wrangler.toml`·배포 절차 README 포함.
+      - `src/license/licenseEngine.ts` — `EXTPAY_EXTENSION_ID`/`isLicenseConfigured()`를 `PADDLE_CHECKOUT_URL`(Paddle 호스티드 체크아웃 링크)·`PADDLE_VERIFY_ENDPOINT`(Worker `/check` URL) 기반으로 교체. `LicenseState.source`에서 `'extpay'` 제거, `'paddle'` 추가.
+      - `src/license/licenseManager.ts` — `extpay` 동적 import 전체 제거. `openPaymentPage(email)`은 Paddle 체크아웃 링크에 `?user_email=`을 붙여 새 탭으로 열기(SDK 불필요). `openLoginPage()`(매직링크)를 `restoreByEmail(email)`(Worker `/check` 직접 조회)로 대체 — Paddle에는 매직링크 로그인이 없어, 구매·복원 모두 이메일 입력이 한 단계 더 필요해짐.
+      - `src/background/background.ts` — `import ExtPay`/`extpay.startBackground()` 정적 import 제거. 24시간 주기 `refreshLicense()`가 저장된 이메일로 Worker `/check`를 `fetch()`하도록 교체.
+      - `src/manager/LicenseControl.tsx` — 구매 전 이메일 입력 필드 추가(강조 박스 안). "이미 구매했어요(복원)" 버튼이 새 탭 대신 이메일로 즉시 Worker를 조회하도록 변경.
+      - `package.json` — `extpay` 의존성 제거(신규 npm 패키지는 추가하지 않음 — 호스티드 체크아웃+`fetch()`만 사용).
+    - **부수적 구조 단순화**: Paddle 확인 방식은 순수 `fetch()`라 extpay가 강제했던 "webextension-polyfill이 PWA에서 크래시하는 문제"가 애초에 없다 — 그래서 background.ts(정적 import)·licenseManager.ts(동적 import)로 나눴던 분리가 더는 필요 없어졌다. PWA 결제 지원 자체(아래 "PWA에 결제 확인 붙이기" 항목)는 이번에 켜지 않았지만, 구조적 걸림돌은 제거해뒀다.
+    - **검증**: `npm run typecheck` 통과 확인 예정(이 편집 직후). 실제 Paddle 가입·Worker 배포·결제 클릭은 이 개발 환경에서 검증 불가 — 아래 "남은 절차" 참고.
+    - **남은 절차(산들 직접 작업 필요, 코드로 대신 불가)**: ① Paddle 판매자 가입·상품/가격 생성·호스티드 체크아웃 링크 발급 ② Cloudflare 계정 생성·Worker 배포(KV 네임스페이스·웹훅 시크릿 포함, `server/paddle-webhook/README.md` 절차) ③ Paddle 대시보드에 웹훅 URL 등록 ④ 위에서 발급된 두 URL을 `licenseEngine.ts`의 `PADDLE_CHECKOUT_URL`·`PADDLE_VERIFY_ENDPOINT`에 반영 후 재빌드.
+    - 복잡도: 높음 (외부 서비스 연동 + 신규 서버 컴포넌트 + 검증 로직)
+  - 복잡도: 높음 (외부 서비스 연동 + 검증 로직) — *위 Paddle 전환 이후 실제 복잡도는 "신규 서버 컴포넌트" 추가로 더 높아졌음, 상세는 위 항목 참고*
 
 - [x] **유료→무료 전환 스위치 구현** (신설·완료 2026-07-27, 산들 요청 — "유료 판매 목적으로 개발했지만 내가 무료 배포로 결정하면 언제든 전환할 수 있게 해줘")
   - 배경: 위 "결제 연동 구현"으로 유료화 자체는 구현됐지만, 산들이 이후 마음을 바꿔 "이 앱은 무료로 풀겠다"고 결정할 경우를 대비한 되돌리기 경로가 없었음. CLAUDE.md "유료화 대비 개발 원칙"에 원칙만 있고 구현은 없던 상태.
