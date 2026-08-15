@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>튜브폴더 — 유튜브 영상을 폴더로 정리하세요</title>
+<style>
+  :root{--bg:#0f1115;--card:#181b22;--text:#e8eaed;--muted:#9aa0a6;--accent:#e8453c;--border:#2a2e37}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+  header{padding:24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;max-width:960px;margin:0 auto}
+  nav a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:14px}
+  nav a:hover{color:var(--text)}
+  main{max-width:800px;margin:0 auto;padding:60px 24px}
+  h1{font-size:36px;margin-bottom:8px}
+  .lead{color:var(--muted);font-size:18px;margin-bottom:40px}
+  .features{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:32px 0}
+  .feature{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+  .feature h3{margin:0 0 8px;font-size:16px}
+  .feature p{margin:0;color:var(--muted);font-size:14px}
+  .pricing{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:40px 0}
+  .plan{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px}
+  .plan.pro{border-color:var(--accent)}
+  .plan h3{margin:0 0 4px}
+  .price{font-size:28px;font-weight:700;margin:8px 0}
+  .plan ul{color:var(--muted);font-size:14px;padding-left:20px}
+  .btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;margin-top:12px}
+  footer{border-top:1px solid var(--border);padding:24px;text-align:center;color:var(--muted);font-size:13px;max-width:960px;margin:40px auto 0}
+  footer a{color:var(--muted);margin:0 8px}
+</style>
+</head>
+<body>
+<header>
+  <strong>🗂️ 튜브폴더</strong>
+  <nav>
+    <a href="./terms.html">이용약관</a>
+    <a href="./refund.html">환불정책</a>
+    <a href="./privacy.html">개인정보처리방침</a>
+  </nav>
+</header>
+
+<main>
+  <h1>유튜브 영상을 내 컴퓨터 폴더처럼</h1>
+  <p class="lead">튜브폴더는 유튜브·유튜브뮤직 영상을 원하는 만큼 하위 폴더를 만들어 정리하는 Chrome 확장 프로그램입니다.</p>
+
+  <div class="features">
+    <div class="feature">
+      <h3>📁 무제한 하위 폴더</h3>
+      <p>내 컴퓨터 탐색기처럼 폴더 안에 폴더를 만들어 영상을 섹터별로 정리합니다.</p>
+    </div>
+    <div class="feature">
+      <h3>🖱️ 우클릭으로 바로 관리</h3>
+      <p>유튜브 페이지를 벗어나지 않고 우클릭 메뉴에서 폴더 생성·이름변경·삭제까지.</p>
+    </div>
+    <div class="feature">
+      <h3>📥 재생목록 일괄 가져오기</h3>
+      <p>재생목록 URL만 붙여넣으면 안에 있는 영상을 한 번에 폴더로 가져옵니다.</p>
+    </div>
+    <div class="feature">
+      <h3>▶️ 이어보기</h3>
+      <p>보던 영상은 멈춘 지점부터 자동으로 이어서 재생됩니다.</p>
+    </div>
+    <div class="feature">
+      <h3>🗑️ 휴지통</h3>
+      <p>삭제해도 바로 사라지지 않고 보관기간(기본 30일) 동안 복구할 수 있습니다.</p>
+    </div>
+    <div class="feature">
+      <h3>☁️ 기기 간 동기화 (PRO)</h3>
+      <p>구글 드라이브를 통해 PC·휴대폰에서 같은 폴더 구성을 이용합니다.</p>
+    </div>
+  </div>
+
+  <h2>가격</h2>
+  <div class="pricing">
+    <div class="plan">
+      <h3>무료</h3>
+      <div class="price">₩0</div>
+      <ul>
+        <li>폴더 생성·이동·복사·삭제·정렬 전체 기능</li>
+        <li>폴더 최대 30개(하위 폴더 포함) · 영상 최대 150개</li>
+        <li>재생목록 가져오기 (전체 영상 한도 내에서 가능)</li>
+        <li>이어보기·휴지통 포함</li>
+      </ul>
+    </div>
+    <div class="plan pro">
+      <h3>PRO (1회 결제)</h3>
+      <div class="price">₩30,000</div>
+      <ul>
+        <li>폴더·영상 개수 무제한 (재생목록도 제한 없이 가져오기)</li>
+        <li>구글 드라이브 자동 동기화</li>
+        <li>평생 사용, 구독 아님</li>
+      </ul>
+      <!-- TODO: Paddle 호스티드 체크아웃 URL이 아직 없음(licenseEngine.ts의 PADDLE_CHECKOUT_URL과 동일 상태,
+           README 'Paddle 사용 준비' 참고). Paddle 가입·상품 등록 후 href를 실제 체크아웃 URL로 교체할 것 —
+           그 전까지는 href="#"인 플레이스홀더 상태로 둔다. -->
+      <a class="btn" href="#" id="buyLink">PRO 구매하기</a>
+    </div>
+  </div>
+  <p style="color:var(--muted);font-size:13px">결제는 Paddle.com(Paddle Market Ltd, 판매자)이 대행하며, 튜브폴더는 카드 정보를 직접 저장하지 않습니다. 부가세 등 세금은 Paddle이 국가별로 자동 계산·처리합니다.</p>
+</main>
+
+<footer>
+  개발자: 산들 · 문의: <a href="mailto:fics01287@gmail.com">fics01287@gmail.com</a><br>
+  <a href="./terms.html">이용약관</a> · <a href="./refund.html">환불정책</a> · <a href="./privacy.html">개인정보처리방침</a>
+</footer>
+</body>
+</html>

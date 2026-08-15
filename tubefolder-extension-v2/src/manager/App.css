@@ -345,6 +345,10 @@ select:focus-visible {
   line-height: 1.5;
 }
 
+.tf-sync-fineprint a {
+  color: #3ea6ff;
+}
+
 .tf-license-redeem {
   margin-top: 10px;
   display: flex;

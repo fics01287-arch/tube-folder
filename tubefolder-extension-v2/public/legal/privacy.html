@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>개인정보처리방침 — 튜브폴더</title>
+<style>
+  :root{--bg:#0f1115;--card:#181b22;--text:#e8eaed;--muted:#9aa0a6;--accent:#e8453c;--border:#2a2e37}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+  header{padding:24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;max-width:960px;margin:0 auto}
+  nav a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:14px}
+  nav a:hover{color:var(--text)}
+  main{max-width:720px;margin:0 auto;padding:48px 24px}
+  h1{font-size:28px}
+  h2{font-size:18px;margin-top:36px;border-left:4px solid var(--accent);padding-left:10px}
+  p,li{color:#c8cbd1;font-size:15px}
+  .meta{color:var(--muted);font-size:13px;margin-bottom:32px}
+  .notice{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:13px;color:var(--muted);margin-bottom:32px}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  th,td{border:1px solid var(--border);padding:10px;text-align:left;vertical-align:top}
+  th{background:var(--card);color:var(--muted);font-weight:600}
+  td{color:#c8cbd1}
+  footer{border-top:1px solid var(--border);padding:24px;text-align:center;color:var(--muted);font-size:13px;max-width:960px;margin:40px auto 0}
+  footer a{color:var(--muted);margin:0 8px}
+</style>
+</head>
+<body>
+<header>
+  <strong>🗂️ 튜브폴더</strong>
+  <nav>
+    <a href="./index.html">제품 소개</a>
+    <a href="./terms.html">이용약관</a>
+    <a href="./refund.html">환불정책</a>
+  </nav>
+</header>
+
+<main>
+  <h1>개인정보처리방침</h1>
+  <p class="meta">시행일: 2026년 8월 15일</p>
+
+  <div class="notice">본 방침은 초안이며, 실제 서비스 운영 전 개인정보보호법 등 관련 법령에 따른 법률 전문가 검토를 권장합니다.</div>
+
+  <p>튜브폴더(이하 "개발자")는 이용자의 개인정보를 중요하게 생각하며, 관련 법령을 준수합니다. 본 방침은 서비스가 어떤 정보를 수집하고 어떻게 이용하는지 설명합니다.</p>
+
+  <h2>1. 수집하는 개인정보 항목</h2>
+  <table>
+    <tr><th>구분</th><th>수집 항목</th><th>수집 시점</th></tr>
+    <tr><td>기본 이용</td><td>없음 (폴더·영상 데이터는 이용자의 브라우저 로컬 저장소에만 저장됨)</td><td>-</td></tr>
+    <tr><td>구글 드라이브 동기화 (선택, PRO)</td><td>구글 계정 식별 정보(OAuth 토큰), 앱 전용 숨김 폴더(App Data)에 저장되는 폴더·영상 목록 데이터</td><td>동기화 기능을 직접 켤 때</td></tr>
+    <tr><td>PRO 결제</td><td>이메일 주소 (결제 확인용). 카드번호 등 결제 수단 정보는 결제대행사 Paddle이 직접 수집하며 개발자는 접근할 수 없음</td><td>PRO 구매 시</td></tr>
+    <tr><td>라이선스 키 (선택)</td><td>입력한 이메일 + 라이선스 키</td><td>라이선스 키로 인증할 때</td></tr>
+  </table>
+
+  <h2>2. 개인정보의 수집·이용 목적</h2>
+  <ul>
+    <li>구글 드라이브 동기화: 여러 기기 간 폴더 구성을 동일하게 유지하기 위함</li>
+    <li>이메일 주소: PRO 결제 완료 여부 확인 및 구매 복원(재설치 시 재결제 방지) 처리</li>
+  </ul>
+
+  <h2>3. 개인정보의 보관 장소 및 보유 기간</h2>
+  <ul>
+    <li>폴더·영상 데이터: 이용자의 브라우저(chrome.storage.local)에만 저장되며, 개발자 서버로 전송되지 않습니다.</li>
+    <li>동기화 데이터: 이용자 본인의 구글 드라이브 앱 전용 숨김 폴더(App Data)에 저장되며, 이용자 본인의 구글 계정 하에 있습니다. 개발자는 별도 서버에 이를 저장하지 않습니다.</li>
+    <li>결제 확인용 이메일: 결제 상태 확인을 위해 Cloudflare Workers(서버리스) 상의 저장소(KV)에 "이메일 → 결제 여부"만 최소 형태로 저장하며, 서비스 이용 중 계속 보관됩니다. 삭제를 원할 경우 문의를 통해 요청할 수 있습니다.</li>
+    <li>휴지통에 이동된 폴더/영상: 기본 30일간 로컬에 보관 후 자동 삭제됩니다(설정에서 조정 가능).</li>
+  </ul>
+
+  <h2>4. 개인정보의 제3자 제공 및 처리위탁</h2>
+  <table>
+    <tr><th>제공받는 자</th><th>목적</th><th>제공 항목</th></tr>
+    <tr><td>Paddle (Paddle.com Market Ltd)</td><td>결제 처리 (Merchant of Record)</td><td>이메일, 결제 정보 (카드 정보 등은 Paddle이 직접 수집)</td></tr>
+    <tr><td>Google (Google Drive API)</td><td>기기 간 동기화</td><td>OAuth 인증 정보, 폴더·영상 목록 데이터</td></tr>
+    <tr><td>Cloudflare (Workers/KV)</td><td>결제 완료 여부 확인(라이선스 검증)</td><td>이메일, 결제 상태</td></tr>
+  </table>
+  <p>위 업체 외에는 이용자의 동의 없이 개인정보를 제3자에게 제공하지 않습니다.</p>
+
+  <h2>5. 이용자의 권리</h2>
+  <p>이용자는 언제든지 다음 권리를 행사할 수 있습니다.</p>
+  <ul>
+    <li>구글 드라이브 동기화 연동 해제 (설정 메뉴에서 직접 해제 가능)</li>
+    <li>결제 확인용 이메일 정보의 열람·삭제 요청 (개발자 이메일로 문의)</li>
+    <li>확장 프로그램 삭제를 통한 로컬 데이터 전체 삭제</li>
+  </ul>
+
+  <h2>6. 개인정보 보호책임자</h2>
+  <p>성명: 산들<br>이메일: <a href="mailto:fics01287@gmail.com" style="color:var(--accent)">fics01287@gmail.com</a></p>
+
+  <h2>7. 방침의 변경</h2>
+  <p>본 방침의 내용 추가, 삭제 및 수정이 있는 경우 시행 최소 7일 전부터 서비스 내 공지 또는 이 페이지를 통해 고지합니다.</p>
+</main>
+
+<footer>
+  개발자: 산들 · 문의: <a href="mailto:fics01287@gmail.com">fics01287@gmail.com</a><br>
+  <a href="./index.html">제품 소개</a> · <a href="./terms.html">이용약관</a> · <a href="./refund.html">환불정책</a>
+</footer>
+</body>
+</html>

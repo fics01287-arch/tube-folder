@@ -128,9 +128,9 @@ export function verifyLicenseKey(key: string, email: string): boolean {
   return APPROVED_LICENSES.some((entry) => entry.key === trimmedKey && normalizeEmail(entry.email) === normalizedEmail);
 }
 
-// ── 무료 티어 한도 (2026-07-21 유료화 정책 확정 그대로 채택) ─────────
-export const FREE_FOLDER_LIMIT = 20;
-export const FREE_VIDEO_LIMIT = 500;
+// ── 무료 티어 한도 (2026-08-15 갱신 — 하위 폴더 포함 전체 폴더 수 30개, 영상 150개) ─────────
+export const FREE_FOLDER_LIMIT = 30;
+export const FREE_VIDEO_LIMIT = 150;
 
 export class LicenseLimitError extends Error {
   code: 'folder-limit' | 'video-limit' | 'sync-paid-only';

@@ -7,7 +7,14 @@
 //    쓴 이메일을 입력하면 즉시 Paddle Worker에 조회하는 방식으로 대체(restoreByEmail)
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FREE_DISTRIBUTION_MODE, getCachedLicense, isLicenseConfigured, LicenseState } from '../license/licenseEngine';
+import {
+  FREE_DISTRIBUTION_MODE,
+  FREE_FOLDER_LIMIT,
+  FREE_VIDEO_LIMIT,
+  getCachedLicense,
+  isLicenseConfigured,
+  LicenseState
+} from '../license/licenseEngine';
 import {
   isLicenseAvailable,
   openPaymentPage,
@@ -233,7 +240,7 @@ export default function LicenseControl({ openSignal }: Props) {
               <>
                 {/* 켜지 않을 경우의 결과를 먼저 안내 */}
                 <p className="tf-sync-desc">
-                  무료 버전은 폴더 20개·영상 500개까지, 재생목록은 한 번에 일부만 가져올 수 있습니다.
+                  무료 버전은 폴더 {FREE_FOLDER_LIMIT}개·영상 {FREE_VIDEO_LIMIT}개까지, 재생목록은 한 번에 일부만 가져올 수 있습니다.
                   <br />
                   PRO로 업그레이드하면 폴더·영상 개수 제한이 없어지고, 클라우드 동기화·재생목록 전체 가져오기를 쓸 수
                   있습니다.

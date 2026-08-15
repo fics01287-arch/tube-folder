@@ -2,7 +2,7 @@
 // SyncControl·LicenseControl과 같은 "툴바 버튼 + 오버레이 패널" 패턴을 그대로 재사용한다(신규 CSS 클래스 불필요).
 
 import { useState } from 'react';
-import { APP_VERSION, DEVELOPER_NAME, INITIAL_DEV_DATE, LAST_MODIFIED_DATE } from '../appInfo';
+import { APP_VERSION, BUG_REPORT_EMAIL, DEVELOPER_NAME, INITIAL_DEV_DATE, LAST_MODIFIED_DATE } from '../appInfo';
 import { useEscapeClose } from './useEscapeClose';
 
 export default function AppInfo() {
@@ -35,6 +35,11 @@ export default function AppInfo() {
               최초 개발일: {INITIAL_DEV_DATE}
               <br />
               최근 수정일: {LAST_MODIFIED_DATE}
+            </p>
+            <p className="tf-sync-fineprint">
+              오작동이나 오류를 발견하셨나요?
+              <br />
+              <a href={`mailto:${BUG_REPORT_EMAIL}`}>{BUG_REPORT_EMAIL}</a>로 제보해 주세요.
             </p>
             <div className="tf-sync-actions">
               <button className="tf-btn" onClick={() => setOpen(false)}>

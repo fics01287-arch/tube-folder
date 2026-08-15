@@ -8,6 +8,9 @@ declare const __TF_VERSION__: string;
 export const DEVELOPER_NAME = '산들';
 export const INITIAL_DEV_DATE = '2026-07-19';
 
+// 버그 제보 채널 — CLAUDE.md "YouTube DOM 변경 대응 원칙"(신설 2026-07-28) 반영.
+export const BUG_REPORT_EMAIL = 'fics01287@gmail.com';
+
 export const APP_VERSION = typeof __TF_VERSION__ !== 'undefined' && __TF_VERSION__ ? __TF_VERSION__ : '0.0.0';
 
 // git 조회 실패 등으로 빌드 시점에 값을 못 얻으면(__TF_LAST_MODIFIED__가 빈 문자열) 조용히 안내 문구로 대체 —
