@@ -32,6 +32,17 @@ Stripe/ExtensionPay와 달리 Paddle Billing은 클라이언트에서 바로 "�
    ```
    (프롬프트가 뜨면 Paddle이 발급한 시크릿 값을 붙여넣기)
 
+3-1. Paddle API 키도 별도 시크릿으로 등록 (2026-08-17 추가 — `transaction.completed` 웹훅에는
+   구매자 이메일이 없고 `customer_id`만 있어서, Worker가 이 API 키로 Paddle에 이메일을 되물어봐야
+   한다). Paddle 대시보드 → Developer Tools → Authentication → API keys → "New API key" →
+   권한은 **Customers: Read**만 선택(그 이상 권한 불필요).
+   ```bash
+   wrangler secret put PADDLE_API_KEY
+   ```
+   ⚠️ `worker.js`의 `PADDLE_API_BASE` 상수가 샌드박스 주소(`sandbox-api.paddle.com`)로 고정돼 있다 —
+   라이브 전환 시 이 API 키를 라이브 계정 키로 새로 발급하고, `PADDLE_API_BASE`도
+   `https://api.paddle.com`으로 함께 바꿔야 한다(체크아웃 URL·웹훅 시크릿과 항상 같은 모드로 맞출 것).
+
 4. 배포
    ```bash
    wrangler deploy
