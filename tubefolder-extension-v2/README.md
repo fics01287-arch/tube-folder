@@ -102,7 +102,7 @@ Merchant of Record이며 한국 판매자를 지원하는 Paddle로 교체했습
 동작하려면 **Paddle 가입 + 상품/가격 등록 + Cloudflare Worker 배포**가 필요합니다.
 
 1. https://www.paddle.com 에서 판매자(Seller) 가입 → 상품(Product) 생성 → 가격(Price)을 **1회성(one-time)**
-   으로 추가, 금액은 1단계에서 확정한 ₩15,000~20,000 중 하나로 설정
+   으로 추가, 금액은 ₩30,000으로 설정 (2026-08-16 확정, ROADMAP-CHECKLIST.md 1단계 참고)
 2. Paddle 대시보드 → Checkout → Checkout Links에서 위 가격이 연결된 **호스티드 체크아웃 링크**를 하나 생성
 3. 생성된 링크 전체를 `src/license/licenseEngine.ts`의 `PADDLE_CHECKOUT_URL` 상수
    (`REPLACE_ME_PADDLE_CHECKOUT_URL` 자리)에 붙여넣기
@@ -119,7 +119,7 @@ Merchant of Record이며 한국 판매자를 지원하는 Paddle로 교체했습
 - 무료 티어 한도(폴더 30개·영상 150개)와 클라우드 동기화 잠금은 `PADDLE_CHECKOUT_URL`·`PADDLE_VERIFY_ENDPOINT`를
   실제 값으로 바꾸기 전까지는 걸리지 않습니다(개발 중 테스트 방해 방지) — 실제 값으로 교체한 뒤부터 적용됩니다.
 - 구매 복원(재설치·기기 변경 시 재결제 방지)은 결제에 쓴 이메일을 다시 입력하면 Worker 조회로 즉시 복원됩니다.
-- PWA(휴대폰 매니저) 빌드는 아직 결제 확인을 지원하지 않습니다(별도 로드맵 항목) — 그 전까지 PWA에서는 한도·동기화 잠금이 걸리지 않습니다(의도된 동작). 다만 이번 전환으로 순수 fetch() 기반이 되어, 확장 전용 API에 묶여 있던 예전 구조적 걸림돌은 없어졌습니다(PWA 지원 자체는 여전히 별도 결정 사항).
+- PWA(휴대폰 매니저) 빌드도 결제 확인을 지원합니다(2026-08-17, "PWA에 결제 확인 붙이기" 구현 완료 — ROADMAP-CHECKLIST.md 3단계 참고). 위 `PADDLE_CHECKOUT_URL`·`PADDLE_VERIFY_ENDPOINT`를 실제 값으로 바꾸면 확장·PWA 양쪽에 동시에 적용되며, 무료 티어 한도·동기화 잠금도 그 시점부터 PWA에 함께 걸립니다(의도된 동작). PWA는 크롬 확장의 `chrome.alarms`(24시간 백그라운드 재확인)에 대응하는 상시 백그라운드 컨텍스트가 없어, 매니저 페이지를 열 때 + 포그라운드로 돌아올 때(`visibilitychange`) 재확인이 필요하면 자동으로 한 번 더 확인합니다.
 
 ## 검증 한계 (알려둘 것)
 - 매니저 페이지(storage 계층 CRUD)는 로컬 브라우저 미리보기(`npm run dev`, localStorage 폴백)로 실제 클릭까지 검증함.

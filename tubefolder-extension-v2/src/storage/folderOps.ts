@@ -8,9 +8,10 @@ import { FREE_FOLDER_LIMIT, FREE_VIDEO_LIMIT, isPaidCached, LicenseLimitError } 
 import { isLicenseAvailable } from '../license/licenseManager';
 import { youtubeUrl } from '../shared/youtubeSelectors';
 
-// 무료/유료 한도는 isLicenseAvailable()(확장 컨텍스트 + 결제 설정 완료)일 때만 적용한다. PWA는
-// "PWA에 결제 확인 붙이기"(별도 로드맵 항목) 이전까지 유료 여부를 확인할 방법이 없어, 여기서 한도를
-// 걸면 PWA 사용자가 영영 업그레이드할 수 없는 상태로 갇힌다 — 그래서 PWA에서는 아직 한도를 걸지 않는다.
+// 무료/유료 한도는 isLicenseAvailable()(Paddle 결제 설정 완료)일 때만 적용한다. (2026-08-17,
+// "PWA에 결제 확인 붙이기" 구현 완료) isLicenseAvailable()이 더 이상 확장 컨텍스트를 요구하지
+// 않게 되면서 PWA도 이제 동일하게 한도가 적용된다 — PWA에서 유료 여부를 확인할 방법이 이제 생겼으므로
+// (LicenseControl.tsx), 애초 계획대로 이 시점에 함께 켜진다(ROADMAP-CHECKLIST.md 참고).
 
 /** 사용자가 만든 폴더 수(루트·휴지통 제외) — 무료 티어 한도 체크용 */
 function countUserFolders(data: TubeStoreData): number {

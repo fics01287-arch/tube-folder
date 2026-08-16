@@ -12,9 +12,13 @@
 //
 // 이 확인 방식은 순수 fetch()라 extpay의 webextension-polyfill 문제(확장 전용 API라 PWA에서
 // 모듈 로드 시점에 크래시)가 애초에 없다 — 그래서 background.ts(정적 import)·licenseManager.ts
-// (동적 import)로 나눴던 예전 구조가 더는 필요하지 않다. 다만 PWA 결제 지원 자체는 여전히 별도
-// 로드맵 항목이라(가격 확정 여부와 무관하게 UI 노출 여부는 별개 결정), 이번에는 구조적 걸림돌만
-// 제거해두고 isExtensionContext() 게이트는 그대로 유지한다.
+// (동적 import)로 나눴던 예전 구조가 더는 필요하지 않다.
+//
+// (2026-08-17, "PWA에 결제 확인 붙이기" 구현) 위 구조적 걸림돌 제거 덕분에 licenseManager.ts의
+// isLicenseAvailable() 게이트에서 isExtensionContext() 요구조건을 제거해 PWA에서도 결제 확인
+// UI(LicenseControl.tsx)가 뜨도록 했다. 다만 이 파일의 getCachedLicense()/writeLicenseState()는
+// 지금까지 chrome.storage.local 전용이라 PWA(chrome 미정의)에서는 항상 no-op이었던 문제가 남아있어,
+// storage.ts의 hasChromeStorage()+localStorage 폴백과 같은 패턴을 아래에 추가했다.
 
 import { APPROVED_LICENSES } from './approvedLicenses';
 
@@ -35,10 +39,13 @@ export const FREE_DISTRIBUTION_MODE = false;
  *  (README 'Paddle 사용 준비' 참고). 여기에 구매자 이메일을 ?user_email= 쿼리로 붙여서 연다. */
 // 타입을 string으로 넓혀 둔다 — 리터럴 타입인 채로 두면 아래 isLicenseConfigured()의 비교식이
 // "항상 참/거짓인 비교"로 오인돼 이 값을 실제 URL로 교체하는 순간 tsc 에러(TS2367)가 난다.
-export const PADDLE_CHECKOUT_URL: string = 'REPLACE_ME_PADDLE_CHECKOUT_URL';
+// ⚠️ 2026-08-16 기준 샌드박스(테스트) 체크아웃 URL — 실제 배포 전 반드시 라이브 체크아웃 URL로 교체할 것
+// (라이브 전환은 ROADMAP-CHECKLIST.md "결제 연동 구현" 항목의 미해결 후속조치—Paddle 고객지원 접근요청—확인 후 진행).
+export const PADDLE_CHECKOUT_URL: string =
+  'https://sandbox-pay.paddle.io/hsc_01m04pbzkgxv91een9v87kvw2g_vw9gbhzdrp3zzrey4341japbt2certt5?price_id=pri_01m04myhdswd06ywgzm8gd4ra3';
 
-/** server/paddle-webhook/ Cloudflare Worker의 /check 엔드포인트 전체 URL로 교체해야 함. */
-export const PADDLE_VERIFY_ENDPOINT: string = 'REPLACE_ME_PADDLE_VERIFY_ENDPOINT';
+/** server/paddle-webhook/ Cloudflare Worker의 /check 엔드포인트 전체 URL. (2026-08-16 배포 완료) */
+export const PADDLE_VERIFY_ENDPOINT: string = 'https://tubefolder-paddle-license.sandeul-tf.workers.dev/check';
 
 export function isLicenseConfigured(): boolean {
   return PADDLE_CHECKOUT_URL !== 'REPLACE_ME_PADDLE_CHECKOUT_URL' && PADDLE_VERIFY_ENDPOINT !== 'REPLACE_ME_PADDLE_VERIFY_ENDPOINT';
@@ -81,9 +88,18 @@ const FREE_DISTRIBUTION_STATE: LicenseState = { paid: true, email: null, paidAt:
 /** 캐시만 읽는다(네트워크 호출 없음) — 폴더 생성 등 오프라인에서도 계속 동작해야 하는 경로에서 사용 */
 export async function getCachedLicense(): Promise<LicenseState> {
   if (FREE_DISTRIBUTION_MODE) return FREE_DISTRIBUTION_STATE;
-  if (!hasChromeStorage()) return FREE_LICENSE_STATE;
-  const o = await chrome.storage.local.get(LICENSE_STORAGE_KEY);
-  return (o[LICENSE_STORAGE_KEY] as LicenseState) || FREE_LICENSE_STATE;
+  if (hasChromeStorage()) {
+    const o = await chrome.storage.local.get(LICENSE_STORAGE_KEY);
+    return (o[LICENSE_STORAGE_KEY] as LicenseState) || FREE_LICENSE_STATE;
+  }
+  // PWA 등 일반 웹 컨텍스트 — storage.ts load()와 같은 패턴으로 localStorage 폴백
+  // (2026-08-17, "PWA에 결제 확인 붙이기").
+  try {
+    const raw = localStorage.getItem(LICENSE_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as LicenseState) : FREE_LICENSE_STATE;
+  } catch {
+    return FREE_LICENSE_STATE;
+  }
 }
 
 export async function isPaidCached(): Promise<boolean> {
@@ -92,8 +108,15 @@ export async function isPaidCached(): Promise<boolean> {
 }
 
 export async function writeLicenseState(state: LicenseState): Promise<void> {
-  if (!hasChromeStorage()) return;
-  await chrome.storage.local.set({ [LICENSE_STORAGE_KEY]: state });
+  if (hasChromeStorage()) {
+    await chrome.storage.local.set({ [LICENSE_STORAGE_KEY]: state });
+    return;
+  }
+  try {
+    localStorage.setItem(LICENSE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // 웹 폴백 저장 실패는 무시(storage.ts save()와 동일 원칙) — 확장 환경에선 도달하지 않음
+  }
 }
 
 /** 캐시가 없거나 재확인 주기가 지났는지 — background의 온라인 확인 트리거 조건으로 사용 */

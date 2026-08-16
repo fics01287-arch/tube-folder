@@ -9,7 +9,6 @@
 import {
   FREE_DISTRIBUTION_MODE,
   getCachedLicense,
-  isExtensionContext,
   isLicenseConfigured,
   isLicenseKeyGranted,
   LicenseState,
@@ -19,8 +18,12 @@ import {
   writeLicenseState
 } from './licenseEngine';
 
+// (2026-08-17, "PWA에 결제 확인 붙이기") 예전엔 isExtensionContext()도 함께 요구해 PWA(일반 웹
+// 컨텍스트)에서는 결제 확인 UI 자체가 숨겨졌다. Paddle 확인은 순수 fetch()라 확장 전용 API가 필요
+// 없으므로(licenseEngine.ts 상단 주석 참고) 그 게이트를 제거 — 이제 "Paddle 설정 완료" 하나만
+// 확인하면 확장·PWA 어느 쪽에서도 동일하게 동작한다.
 export function isLicenseAvailable(): boolean {
-  return isExtensionContext() && isLicenseConfigured();
+  return isLicenseConfigured();
 }
 
 /** Paddle Worker의 /check?email=...을 조회해 결제 여부를 가져온다(네트워크 호출) */

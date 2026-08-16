@@ -47,10 +47,11 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
   const [buyBusy, setBuyBusy] = useState(false);
   const mounted = useRef(true);
 
-  // 유료화 정책: 클라우드 동기화는 PRO 전용. isLicenseAvailable()이 false인 동안(결제 미설정 개발
-  // 단계이거나, 아직 라이선스 확인을 지원하지 않는 PWA 컨텍스트)은 게이트를 걸지 않는다 — "PWA에
-  // 결제 확인 붙이기"(별도 로드맵 항목) 이전까지는 PWA에 결제 UI 자체를 노출하지 않기 위함.
-  // syncEngine.connectAndEnable()도 같은 조건(isLicenseConfigured())으로 방어적 체크를 한 번 더 한다.
+  // 유료화 정책: 클라우드 동기화는 PRO 전용. isLicenseAvailable()이 false인 동안(Paddle 결제 미설정
+  // 개발 단계)은 게이트를 걸지 않는다. (2026-08-17, "PWA에 결제 확인 붙이기" 구현 완료) 이 함수는
+  // 더 이상 확장 컨텍스트를 요구하지 않으므로, Paddle이 설정된 뒤로는 PWA에서도 동일하게 PRO 전용
+  // 게이트가 걸린다. syncEngine.connectAndEnable()도 같은 조건(isLicenseConfigured())으로 방어적
+  // 체크를 한 번 더 한다.
   useEffect(() => {
     if (!isLicenseAvailable()) return;
     getCachedLicense().then((s) => {

@@ -254,9 +254,10 @@ export async function runSync(source: 'auto' | 'manual'): Promise<SyncRunResult>
 /** 대화형 연결(설정 패널 "구글 드라이브 연결" 버튼) — 성공하면 동기화를 켜고 즉시 1회 동기화한다 */
 export async function connectAndEnable(): Promise<void> {
   // 유료화 정책(2026-07-21 확정): 클라우드 동기화는 PRO 전용. isLicenseAvailable()이 false인 동안
-  // (결제 미설정 개발 단계이거나, 아직 라이선스 확인을 지원하지 않는 PWA 컨텍스트)은 게이트를 걸지
-  // 않는다 — UI 쪽(SyncControl.tsx)도 같은 조건으로 안내를 먼저 보여주지만, 여기서도 방어적으로 한 번
-  // 더 막는다(직접 호출로 우회 방지).
+  // (Paddle 결제 미설정 개발 단계)은 게이트를 걸지 않는다. (2026-08-17, "PWA에 결제 확인 붙이기"
+  // 구현 완료) 이 함수는 더 이상 확장 컨텍스트를 요구하지 않아 Paddle 설정 이후로는 PWA도 동일하게
+  // 게이트가 걸린다 — UI 쪽(SyncControl.tsx)도 같은 조건으로 안내를 먼저 보여주지만, 여기서도
+  // 방어적으로 한 번 더 막는다(직접 호출로 우회 방지).
   if (isLicenseAvailable() && !(await isPaidCached())) {
     throw new SyncError('unavailable', '클라우드 동기화는 PRO 전용 기능입니다. 먼저 업그레이드해 주세요.');
   }

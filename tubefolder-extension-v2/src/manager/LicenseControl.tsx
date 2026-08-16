@@ -12,8 +12,11 @@ import {
   FREE_FOLDER_LIMIT,
   FREE_VIDEO_LIMIT,
   getCachedLicense,
+  isExtensionContext,
   isLicenseConfigured,
-  LicenseState
+  isLicenseKeyGranted,
+  LicenseState,
+  needsRecheck
 } from '../license/licenseEngine';
 import {
   isLicenseAvailable,
@@ -82,10 +85,35 @@ export default function LicenseControl({ openSignal }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.paid]);
 
-  // isLicenseAvailable()은 "확장 컨텍스트 + Paddle 설정 완료"를 요구하므로, PADDLE_CHECKOUT_URL이
-  // 아직 플레이스홀더인 동안(또는 PWA)에는 원래 이 배지 전체가 숨겨진다. 하지만 무료 전환 모드
-  // (FREE_DISTRIBUTION_MODE)는 애초에 결제 시스템 설정 여부와 무관하게 "무료"를 알려야 하므로,
-  // 이 경우엔 그 조건을 건너뛰고 플랫폼(확장/PWA) 상관없이 항상 배지를 보여준다.
+  // isLicenseAvailable()은 이제 "Paddle 설정 완료" 하나만 요구한다(2026-08-17부로 확장 전용 게이트
+  // 제거 — licenseManager.ts 참고) — PADDLE_CHECKOUT_URL이 아직 플레이스홀더인 동안에만 이 배지
+  // 전체가 숨겨지고, 확장·PWA는 동일하게 취급된다. 무료 전환 모드(FREE_DISTRIBUTION_MODE)는 애초에
+  // 결제 시스템 설정 여부와 무관하게 "무료"를 알려야 하므로, 이 경우엔 그 조건을 건너뛰고 플랫폼
+  // 상관없이 항상 배지를 보여준다.
+
+  // PWA(독립 웹페이지) 전용 자동 재확인. 크롬 확장은 background.ts의 tf-license-check 알람(24시간
+  // 주기)이 이 역할을 대신하므로 중복 확인하지 않는다 — PWA는 그런 상시 백그라운드 컨텍스트가 없어
+  // (동기화의 "포그라운드 복귀 시 확인" 패턴, App.tsx와 같은 이유) 이 패널을 그리는 매니저 페이지
+  // 자신이 대신 트리거한다. 구매·복원을 한 번도 시도하지 않아 저장된 이메일이 없으면 조회할 대상이
+  // 없으므로 건너뛰고, 승인 기반 무료 라이선스는 Paddle이 모르는 상태라 재확인 대상에서 제외한다
+  // (licenseManager.ts refreshLicenseFromManager()와 동일한 판단 기준).
+  useEffect(() => {
+    if (isExtensionContext() || FREE_DISTRIBUTION_MODE) return;
+    const tick = async () => {
+      const cached = await getCachedLicense();
+      if (!cached.email || isLicenseKeyGranted(cached) || !needsRecheck(cached)) return;
+      const fresh = await refreshLicenseFromManager().catch(() => null);
+      if (fresh && mounted.current) setState(fresh);
+    };
+    tick();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 접근성 보강(ROADMAP 4단계) — 배경 클릭 외에 Esc 키로도 패널/팝업을 닫을 수 있게 한다.
   useEscapeClose(panelOpen, () => setPanelOpen(false));
   useEscapeClose(donePopup, () => {
@@ -93,7 +121,7 @@ export default function LicenseControl({ openSignal }: Props) {
     setPanelOpen(false);
   });
 
-  if (!FREE_DISTRIBUTION_MODE && !isLicenseAvailable()) return null; // PWA 등 미지원 컨텍스트에서는 조용히 숨김
+  if (!FREE_DISTRIBUTION_MODE && !isLicenseAvailable()) return null; // Paddle 미설정(개발 중)에만 조용히 숨김 — 확장·PWA 동일 취급
   if (!state) return null;
 
   async function handleBuy() {
