@@ -1024,22 +1024,41 @@ export default function App() {
   }
 
   function renderTileBody(node: TubeNode, isTrash: boolean, isFolder: boolean, store: TubeStoreData): ReactNode {
+    // (신설 2026-08-30, 산들 지적 — "아이콘 그림을 클릭해도 안 열린다") 목록·표 보기는 이름 버튼 안에
+    // 아이콘이 함께 들어있어 아이콘을 눌러도 열리지만, 아이콘 그리드 보기만 아이콘(.tf-tile-media)이
+    // 이름 버튼과 분리된 별도 요소라 이름 글자 부분만 눌러야 열리는 문제가 있었음. 이름 변경 중(입력창이
+    // 뜬 상태)에는 기존과 동일하게 클릭해도 아무 반응 없는 일반 div로 유지(입력 중인 값이 사라지는 걸 방지).
+    const media = (
+      <>
+        {isFolder ? (
+          <span className="tf-tile-icon" aria-hidden="true">
+            {folderIcon(node, store)}
+          </span>
+        ) : isVideo(node) && node.thumb ? (
+          <img className="tf-tile-thumb" src={node.thumb} alt="" loading="lazy" />
+        ) : (
+          <span className="tf-tile-icon" aria-hidden="true">
+            🎬
+          </span>
+        )}
+        {!isFolder && isVideo(node) && node.duration > 0 && <span className="tf-tile-duration">{formatDuration(node.duration)}</span>}
+      </>
+    );
+
     return (
       <>
-        <div className="tf-tile-media">
-          {isFolder ? (
-            <span className="tf-tile-icon" aria-hidden="true">
-              {folderIcon(node, store)}
-            </span>
-          ) : isVideo(node) && node.thumb ? (
-            <img className="tf-tile-thumb" src={node.thumb} alt="" loading="lazy" />
-          ) : (
-            <span className="tf-tile-icon" aria-hidden="true">
-              🎬
-            </span>
-          )}
-          {!isFolder && isVideo(node) && node.duration > 0 && <span className="tf-tile-duration">{formatDuration(node.duration)}</span>}
-        </div>
+        {isFolder && editingId === node.id ? (
+          <div className="tf-tile-media">{media}</div>
+        ) : (
+          <button
+            className="tf-tile-media tf-tile-media-btn"
+            onClick={() => (isFolder ? setCurrentFolderId(node.id) : handleVideoClick(node))}
+            title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
+            aria-label={isFolder ? `"${node.name}" 열기` : `"${node.name}" 재생`}
+          >
+            {media}
+          </button>
+        )}
 
         {isFolder && editingId === node.id ? (
           <span className="tf-tile-edit">
