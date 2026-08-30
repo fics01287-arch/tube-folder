@@ -16,6 +16,7 @@ import {
   purgeExpiredTrash,
   renameFolder,
   reorderChildren,
+  restoreFromTrash,
   setFolderIcon,
   setSort,
   setSortDir,
@@ -655,6 +656,23 @@ export default function App() {
     }
   }
 
+  // ↩ 복원 버튼(휴지통 안에서만 노출) — restoreFromTrash()가 원래 있던 폴더(prevParentId)로
+  // 자동 계산해 되돌리므로, handleConfirmMove와 달리 목적지를 고르는 다이얼로그가 필요 없다.
+  async function handleRestore(id: string) {
+    setError(null);
+    try {
+      const before = await load();
+      const label = `"${before.nodes[id]?.name ?? ''}" 복원`;
+      await restoreFromTrash(id);
+      pushUndo({ label, snapshot: before });
+      await refresh(currentFolderId);
+      scheduleAutoSync();
+      setToast({ label, kind: 'undo', ts: Date.now() });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   // 실행취소 — Ctrl+Z와 토스트 버튼 둘 다 이 함수를 호출한다. 어떤 액션이었는지 몰라도
   // save(snapshot) 하나로 5가지(이름변경/아이콘변경/순서변경/휴지통이동/이동) 전부 복원된다.
   // 되돌리기 직전 상태는 pushRedo()로 반대쪽 스택에 남겨둬서, 되돌린 걸 다시 적용(redo)할 수 있게 한다.
@@ -937,7 +955,7 @@ export default function App() {
           </span>
         )}
 
-        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && (
+        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId !== store.trashId && (
           <span className="tf-row-actions">
             <button
               className="tf-btn tf-btn-icon"
@@ -973,6 +991,19 @@ export default function App() {
               aria-label={`"${node.name}" 휴지통으로 이동`}
             >
               🗑
+            </button>
+          </span>
+        )}
+        {/* (신설 2026-08-30, 작업순서 1/8) 휴지통 안에서는 이동/휴지통행 대신 전용 복원 버튼 하나만 노출 */}
+        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId === store.trashId && (
+          <span className="tf-row-actions">
+            <button
+              className="tf-btn tf-btn-icon"
+              onClick={() => handleRestore(node.id)}
+              title="복원"
+              aria-label={`"${node.name}" 복원`}
+            >
+              ↩
             </button>
           </span>
         )}
@@ -1059,7 +1090,7 @@ export default function App() {
           </span>
         )}
 
-        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && (
+        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId !== store.trashId && (
           <span className="tf-tile-actions">
             <button
               className="tf-btn tf-btn-icon"
@@ -1095,6 +1126,19 @@ export default function App() {
               aria-label={`"${node.name}" 휴지통으로 이동`}
             >
               🗑
+            </button>
+          </span>
+        )}
+        {/* (신설 2026-08-30, 작업순서 1/8) 휴지통 안에서는 이동/휴지통행 대신 전용 복원 버튼 하나만 노출 */}
+        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId === store.trashId && (
+          <span className="tf-tile-actions">
+            <button
+              className="tf-btn tf-btn-icon"
+              onClick={() => handleRestore(node.id)}
+              title="복원"
+              aria-label={`"${node.name}" 복원`}
+            >
+              ↩
             </button>
           </span>
         )}
@@ -1167,7 +1211,7 @@ export default function App() {
             </button>
           </span>
         )}
-        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && (
+        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId !== store.trashId && (
           <span className="tf-row-actions">
             <button
               className="tf-btn tf-btn-icon"
@@ -1203,6 +1247,19 @@ export default function App() {
               aria-label={`"${node.name}" 휴지통으로 이동`}
             >
               🗑
+            </button>
+          </span>
+        )}
+        {/* (신설 2026-08-30, 작업순서 1/8) 휴지통 안에서는 이동/휴지통행 대신 전용 복원 버튼 하나만 노출 */}
+        {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId === store.trashId && (
+          <span className="tf-row-actions">
+            <button
+              className="tf-btn tf-btn-icon"
+              onClick={() => handleRestore(node.id)}
+              title="복원"
+              aria-label={`"${node.name}" 복원`}
+            >
+              ↩
             </button>
           </span>
         )}

@@ -506,3 +506,34 @@ export async function trashFolder(folderId: string): Promise<void> {
   // 하위 트리는 parentId 참조로 따라오므로 별도 처리 불필요(DATA-MODEL.md §4)
   await save(data);
 }
+
+/**
+ * 휴지통에서 복원 — trashFolder()가 기록해 둔 prevParentId(원래 있던 폴더)로 되돌린다.
+ * (신설 2026-08-30, ROADMAP-CHECKLIST.md 4단계 "휴지통 복원 전용 버튼" 작업순서 1/8)
+ * moveNode()를 그대로 쓰지 않는 이유: moveNode는 호출부가 목적지를 직접 골라야 하는 범용 함수이고,
+ * 복원은 항상 prevParentId를 자동으로 계산해야 하는 별도 정책(원래 위치 우선, 실패 시 최상위 폴더)이라
+ * 분리했다 — 이름 충돌 처리·order 재계산 등 세부 로직은 moveNode와 동일하게 맞춤.
+ * 원래 폴더가 그 사이 삭제됐거나·폴더가 아니게 됐거나·그 폴더 자신도 휴지통에 있으면(원래 위치 자체가
+ * 더 이상 유효하지 않음) 최상위 폴더로 대체한다.
+ */
+export async function restoreFromTrash(nodeId: string): Promise<void> {
+  const data = await load();
+  const node = data.nodes[nodeId];
+  if (!node) throw new FolderOpError('항목을 찾을 수 없습니다.');
+  if (node.parentId !== data.trashId) {
+    throw new FolderOpError('휴지통에 있는 항목만 복원할 수 있습니다.');
+  }
+
+  const prevTarget = node.prevParentId ? data.nodes[node.prevParentId] : undefined;
+  const prevValid =
+    !!prevTarget && prevTarget.type === 'folder' && prevTarget.id !== data.trashId && prevTarget.parentId !== data.trashId;
+  const targetId = prevValid ? (node.prevParentId as string) : data.rootId;
+
+  const siblings = childrenOf(data, targetId).filter((n) => n.id !== data.trashId);
+  node.name = uniqueName(siblings, node.name);
+  node.parentId = targetId;
+  node.order = nextOrder(data, targetId);
+  delete node.prevParentId;
+  await touch(node);
+  await save(data);
+}
