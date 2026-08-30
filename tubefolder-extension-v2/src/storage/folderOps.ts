@@ -2,7 +2,7 @@
 // app.js의 조작함수에 위임했음). 우클릭 메뉴에서 탭 전환 없이 바로 처리하기 위해 저장 계층에
 // 캡슐화한다. 데이터 구조·불변식(DATA-MODEL.md I1~I8)은 그대로 — 새 진입점만 추가.
 
-import type { FolderNode, TubeNode, TubeStoreData, VideoNode } from './types';
+import type { FolderNode, Settings, TubeNode, TubeStoreData, VideoNode } from './types';
 import { load, save, now, uid, uniqueName, newNodeMeta, touch } from './storage';
 import { FREE_FOLDER_LIMIT, FREE_VIDEO_LIMIT, isPaidCached, LicenseLimitError } from '../license/licenseEngine';
 import { isLicenseAvailable } from '../license/licenseManager';
@@ -366,6 +366,128 @@ export async function setTrashRetentionDays(days: number | null): Promise<{ purg
 export async function dismissTrashInfo(): Promise<void> {
   const data = await load();
   data.settings.trashInfoDismissed = true;
+  await save(data);
+}
+
+/**
+ * 정렬 기준 변경(ROADMAP 4단계 "드래그로 순서 재배치 시 삽입선 표시" → "정렬 확장" 추가 구현).
+ * "이름순"·"날짜순"·"유형순"·"크기순"·"직접 순서(드래그)" 5종 지원. 방향(오름/내림차순)은 건드리지 않음
+ * — 방향만 바꾸려면 setSortDir(), 기준·방향을 한 번에 바꾸려면(표 보기 열 헤더 클릭 등) setSort() 사용.
+ */
+export async function setSortMode(sortKey: Settings['sortKey']): Promise<void> {
+  const data = await load();
+  data.settings.sortKey = sortKey;
+  await save(data);
+}
+
+/** 정렬 방향(오름차순/내림차순)만 변경 — 정렬 기준은 그대로 둔다. */
+export async function setSortDir(sortDir: Settings['sortDir']): Promise<void> {
+  const data = await load();
+  data.settings.sortDir = sortDir;
+  await save(data);
+}
+
+/**
+ * 정렬 기준+방향을 한 번의 load/save로 동시 변경 — 표 보기 열 헤더 클릭처럼 "이 기준으로 바로 오름차순
+ * 정렬"을 한 번에 처리해야 할 때, setSortMode()+setSortDir()를 두 번 호출(왕복 두 번)하는 대신 사용.
+ */
+export async function setSort(sortKey: Settings['sortKey'], sortDir: Settings['sortDir']): Promise<void> {
+  const data = await load();
+  data.settings.sortKey = sortKey;
+  data.settings.sortDir = sortDir;
+  await save(data);
+}
+
+/**
+ * 보기 모드 변경(ROADMAP 4단계 "아이콘 그리드 4종·표 보기"). 지금은 아이콘 그리드 4종
+ * (xl/large/medium/small)과 기존 목록(list)만 지원 — 표 보기(details)는 별도 후속 작업.
+ * Settings.view 타입 자체는 'details'까지 이미 열어 뒀으므로 후속 작업에서 그대로 확장 가능.
+ */
+export async function setView(view: Settings['view']): Promise<void> {
+  const data = await load();
+  data.settings.view = view;
+  await save(data);
+}
+
+/**
+ * 드래그 재배치 커밋 — 지정 부모 아래 자식들의 order를 orderedIds가 준 순서대로 0부터 촘촘하게 다시 매긴다.
+ * sortKey==='none'(직접 순서) 모드에서만 호출됨. 휴지통은 항상 별도 취급(MAX_SAFE_INTEGER 고정, emptyStore 참고)이라
+ * orderedIds에 포함돼 있어도 무시한다 — 드래그 대상 자체가 아니라서 실제로는 절대 포함되지 않지만 방어적으로 한 번 더 걸러둔다.
+ * 실제로 순서가 바뀐 노드만 touch()로 modifiedAt/version을 갱신해, 3단계 동기화 병합(LWW)의 "수정"과 기준을 맞춘다.
+ */
+export async function reorderChildren(parentId: string, orderedIds: string[]): Promise<void> {
+  const data = await load();
+  let changed = false;
+  for (let index = 0; index < orderedIds.length; index++) {
+    const node = data.nodes[orderedIds[index]];
+    if (!node || node.parentId !== parentId || node.id === data.trashId) continue;
+    if (node.order !== index) {
+      node.order = index;
+      await touch(node);
+      changed = true;
+    }
+  }
+  if (changed) await save(data);
+}
+
+/**
+ * 폴더 또는 영상을 다른 폴더로 이동(부모 교체) — 탐색기의 "잘라내기/붙여넣기"에 해당.
+ * 같은 부모 내 순서만 바꾸는 reorderChildren()과는 별개로, 트리 구조(parentId) 자체를 바꾼다.
+ * (2026-08-29, "이동/이름변경 실행취소" 요청과 함께 신규 추가 — v1까지는 같은 폴더 안 드래그
+ * 재정렬만 있었고 폴더 간 이동 자체가 없었음. ROADMAP-CHECKLIST.md 참고)
+ * 휴지통으로의 이동은 이 함수로 하지 않는다 — prevParentId 기록·보관기간 정책 안내 팝업 등
+ * 휴지통 전용 로직은 trashFolder()가 유일하게 담당하므로 여기서 섞으면 안 됨.
+ */
+export async function moveNode(nodeId: string, newParentId: string): Promise<void> {
+  const data = await load();
+  const node = data.nodes[nodeId];
+  if (!node) throw new FolderOpError('항목을 찾을 수 없습니다.');
+  if (nodeId === data.rootId || nodeId === data.trashId) {
+    throw new FolderOpError('이 폴더는 이동할 수 없습니다.');
+  }
+  if (node.type === 'folder' && node.system === 'trash') {
+    throw new FolderOpError('이 폴더는 이동할 수 없습니다.');
+  }
+
+  const target = data.nodes[newParentId];
+  if (!target || target.type !== 'folder') {
+    throw new FolderOpError('이동할 폴더를 찾을 수 없습니다.');
+  }
+  if (newParentId === data.trashId) {
+    throw new FolderOpError('휴지통으로는 이 방법으로 이동할 수 없습니다.');
+  }
+  if (newParentId === node.parentId) {
+    throw new FolderOpError('이미 이 폴더에 있습니다.');
+  }
+
+  // 사이클 방지: 폴더를 자기 자신이나 자신의 하위 폴더로 옮기면 트리가 끊어져 도달 불가능한
+  // 상태가 되므로 반드시 막아야 함. emptyTrash()의 BFS(부모→자식 참조가 없어 반복적으로
+  // 역추적)와 동일한 방식으로 자손 집합을 구한다. 영상은 폴더를 담을 수 없으므로 검사 불필요.
+  if (node.type === 'folder') {
+    if (newParentId === nodeId) throw new FolderOpError('폴더를 자기 자신으로 이동할 수 없습니다.');
+    const descendants = new Set<string>([nodeId]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const k in data.nodes) {
+        const n = data.nodes[k];
+        if (!descendants.has(n.id) && n.parentId && descendants.has(n.parentId)) {
+          descendants.add(n.id);
+          grew = true;
+        }
+      }
+    }
+    if (descendants.has(newParentId)) {
+      throw new FolderOpError('폴더를 그 하위 폴더로 이동할 수 없습니다.');
+    }
+  }
+
+  // 대상 폴더에 동명 항목이 있으면 createFolder/addVideosToFolder와 동일한 관례로 이름 뒤에 번호를 붙인다.
+  const siblings = childrenOf(data, newParentId).filter((n) => n.id !== data.trashId);
+  node.name = uniqueName(siblings, node.name);
+  node.parentId = newParentId;
+  node.order = nextOrder(data, newParentId);
+  await touch(node);
   await save(data);
 }
 

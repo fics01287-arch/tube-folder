@@ -21,9 +21,9 @@
 
 const REPLAY_TOLERANCE_SECONDS = 300; // 웹훅 재전송·네트워크 지연 감안 — 너무 짧으면 정상 웹훅도 거부될 수 있음
 
-// ⚠️ 샌드박스 기준 API 베이스 URL. 라이브 전환 시 반드시 'https://api.paddle.com'으로 교체할 것
-// (PADDLE_CHECKOUT_URL·PADDLE_API_KEY도 함께 라이브 값으로 바꿔야 함 — 셋이 항상 같은 모드여야 함).
-const PADDLE_API_BASE = 'https://sandbox-api.paddle.com';
+// 라이브 전환 완료 (2026-08-29) — PADDLE_CHECKOUT_URL·PADDLE_API_KEY도 함께 라이브 값으로 교체함
+// (셋이 항상 같은 모드여야 함. 이전 샌드박스 값: 'https://sandbox-api.paddle.com').
+const PADDLE_API_BASE = 'https://api.paddle.com';
 
 export default {
   async fetch(request, env) {

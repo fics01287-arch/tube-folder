@@ -35,20 +35,24 @@ import { APPROVED_LICENSES } from './approvedLicenses';
  */
 export const FREE_DISTRIBUTION_MODE = false;
 
-/** Paddle 대시보드에서 만든 호스티드 체크아웃 링크(가격이 이미 연결된 상태)로 교체해야 함
- *  (README 'Paddle 사용 준비' 참고). 여기에 구매자 이메일을 ?user_email= 쿼리로 붙여서 연다. */
-// 타입을 string으로 넓혀 둔다 — 리터럴 타입인 채로 두면 아래 isLicenseConfigured()의 비교식이
-// "항상 참/거짓인 비교"로 오인돼 이 값을 실제 URL로 교체하는 순간 tsc 에러(TS2367)가 난다.
-// ⚠️ 2026-08-16 기준 샌드박스(테스트) 체크아웃 URL — 실제 배포 전 반드시 라이브 체크아웃 URL로 교체할 것
-// (라이브 전환은 ROADMAP-CHECKLIST.md "결제 연동 구현" 항목의 미해결 후속조치—Paddle 고객지원 접근요청—확인 후 진행).
-export const PADDLE_CHECKOUT_URL: string =
-  'https://sandbox-pay.paddle.io/hsc_01m04pbzkgxv91een9v87kvw2g_vw9gbhzdrp3zzrey4341japbt2certt5?price_id=pri_01m04myhdswd06ywgzm8gd4ra3';
+/** 결제 페이지(웹사이트) URL — 구매자 이메일을 ?email= 쿼리로 붙여서 새 탭으로 연다.
+ *  (2026-08-30, 호스티드 체크아웃 → 웹사이트 오버레이 체크아웃 전환) 예전엔 이 값이 Paddle 도메인의
+ *  "호스티드 체크아웃" 링크였으나, 라이브 계정에서 그 기능 접근 요청이 거절됨(사유: "앱투웹 판매
+ *  퍼널이거나 데스크톱 앱에 임베드하는 경우에만 제공" — 상세는 ROADMAP-CHECKLIST.md "결제 연동 구현"
+ *  항목 참고). 대신 이미 있던 마케팅 웹사이트(`public/legal/index.html`, GitHub Pages 배포·Paddle
+ *  도메인 검토도 이미 이 경로로 통과됨)에 Paddle.js 오버레이 체크아웃을 심어, 이 웹사이트를 여는
+ *  방식으로 바꿨다 — 이게 오히려 Paddle이 말한 "앱투웹 판매 퍼널"에 정확히 부합하는 구조.
+ *  실제 결제 UI(가격 ID·Paddle 클라이언트 토큰)는 `public/legal/index.html`에 있음 — 이 파일은 Vite가
+ *  손대지 않고 그대로 복사하는 정적 파일이라, 그쪽 값을 바꿀 땐 이 TS 코드가 아니라 그 HTML 파일을
+ *  직접 열어 고쳐야 한다. */
+export const PADDLE_BUY_PAGE_URL: string =
+  'https://fics01287-arch.github.io/tube-folder/tubefolder-extension-v2/pwa-dist/legal/';
 
 /** server/paddle-webhook/ Cloudflare Worker의 /check 엔드포인트 전체 URL. (2026-08-16 배포 완료) */
 export const PADDLE_VERIFY_ENDPOINT: string = 'https://tubefolder-paddle-license.sandeul-tf.workers.dev/check';
 
 export function isLicenseConfigured(): boolean {
-  return PADDLE_CHECKOUT_URL !== 'REPLACE_ME_PADDLE_CHECKOUT_URL' && PADDLE_VERIFY_ENDPOINT !== 'REPLACE_ME_PADDLE_VERIFY_ENDPOINT';
+  return PADDLE_VERIFY_ENDPOINT !== 'REPLACE_ME_PADDLE_VERIFY_ENDPOINT';
 }
 
 export const LICENSE_STORAGE_KEY = 'tubefolder_license';

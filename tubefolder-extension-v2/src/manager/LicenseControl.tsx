@@ -86,8 +86,9 @@ export default function LicenseControl({ openSignal }: Props) {
   }, [state?.paid]);
 
   // isLicenseAvailable()은 이제 "Paddle 설정 완료" 하나만 요구한다(2026-08-17부로 확장 전용 게이트
-  // 제거 — licenseManager.ts 참고) — PADDLE_CHECKOUT_URL이 아직 플레이스홀더인 동안에만 이 배지
-  // 전체가 숨겨지고, 확장·PWA는 동일하게 취급된다. 무료 전환 모드(FREE_DISTRIBUTION_MODE)는 애초에
+  // 제거 — licenseManager.ts 참고) — PADDLE_VERIFY_ENDPOINT가 아직 플레이스홀더인 동안에만 이 배지
+  // 전체가 숨겨지고, 확장·PWA는 동일하게 취급된다(2026-08-30, 결제 페이지 자체는 이제 고정된 실제
+  // URL이라 플레이스홀더 개념이 없음 — licenseEngine.ts의 PADDLE_BUY_PAGE_URL 주석 참고). 무료 전환 모드(FREE_DISTRIBUTION_MODE)는 애초에
   // 결제 시스템 설정 여부와 무관하게 "무료"를 알려야 하므로, 이 경우엔 그 조건을 건너뛰고 플랫폼
   // 상관없이 항상 배지를 보여준다.
 

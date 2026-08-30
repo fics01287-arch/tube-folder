@@ -24,7 +24,12 @@
   .plan h3{margin:0 0 4px}
   .price{font-size:28px;font-weight:700;margin:8px 0}
   .plan ul{color:var(--muted);font-size:14px;padding-left:20px}
-  .btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;margin-top:12px}
+  .btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;margin-top:12px;border:none;font-size:15px;cursor:pointer;font-family:inherit}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .buy-email{display:block;width:100%;box-sizing:border-box;margin-top:16px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:#0d0f13;color:var(--text);font-size:14px}
+  .buy-email::placeholder{color:var(--muted)}
+  .buy-note{color:var(--muted);font-size:12px;margin-top:8px}
+  .buy-error{color:var(--accent);font-size:13px;margin-top:8px;display:none}
   footer{border-top:1px solid var(--border);padding:24px;text-align:center;color:var(--muted);font-size:13px;max-width:960px;margin:40px auto 0}
   footer a{color:var(--muted);margin:0 8px}
 </style>
@@ -90,10 +95,13 @@
         <li>구글 드라이브 자동 동기화</li>
         <li>평생 사용, 구독 아님</li>
       </ul>
-      <!-- TODO: Paddle 호스티드 체크아웃 URL이 아직 없음(licenseEngine.ts의 PADDLE_CHECKOUT_URL과 동일 상태,
-           README 'Paddle 사용 준비' 참고). Paddle 가입·상품 등록 후 href를 실제 체크아웃 URL로 교체할 것 —
-           그 전까지는 href="#"인 플레이스홀더 상태로 둔다. -->
-      <a class="btn" href="#" id="buyLink">PRO 구매하기</a>
+      <!-- (2026-08-30) 확장 안에서 "구매하기"를 누르면 이 페이지가 ?email=...으로 새 탭에서 열린다
+           (licenseManager.ts의 openPaymentPage 참고) — 아래 스크립트가 그 값을 읽어 미리 채워준다.
+           직접 이 페이지에 들어온 경우에도 이메일을 입력하면 동일하게 구매할 수 있다. -->
+      <input class="buy-email" type="email" id="buyEmail" placeholder="구매에 사용할 이메일 주소" autocomplete="email">
+      <button class="btn" id="buyLink" disabled>PRO 구매하기</button>
+      <p class="buy-note">튜브폴더 확장 프로그램의 "복원"에 이 이메일을 그대로 입력해야 라이선스가 확인됩니다.</p>
+      <p class="buy-error" id="buyError"></p>
     </div>
   </div>
   <p style="color:var(--muted);font-size:13px">결제는 Paddle.com(Paddle Market Ltd, 판매자)이 대행하며, 튜브폴더는 카드 정보를 직접 저장하지 않습니다. 부가세 등 세금은 Paddle이 국가별로 자동 계산·처리합니다.</p>
@@ -103,5 +111,71 @@
   개발자: 산들 · 문의: <a href="mailto:fics01287@gmail.com">fics01287@gmail.com</a><br>
   <a href="./terms.html">이용약관</a> · <a href="./refund.html">환불정책</a> · <a href="./privacy.html">개인정보처리방침</a>
 </footer>
+
+<!-- (2026-08-30) Paddle 오버레이 체크아웃 — 호스티드 체크아웃 라이브 접근이 거절돼(ROADMAP-CHECKLIST.md
+     "결제 연동 구현" 항목 참고) 이 웹사이트에 Paddle.js를 직접 심어 체크아웃 모달을 띄우는 방식으로
+     바꿨다. 이 파일은 Vite가 손대지 않고 그대로 복사하는 정적 파일이라, 아래 값을 바꿀 땐 이 파일을
+     직접 열어 고쳐야 한다(licenseEngine.ts 쪽 TS 코드를 고쳐도 반영 안 됨). -->
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+<script>
+(function () {
+  // ⚠️ 아래 두 값은 산들이 Paddle 대시보드에서 직접 발급받아 채워 넣어야 함:
+  //  - PADDLE_CLIENT_TOKEN: Developer Tools → Authentication → Client-side tokens에서 새로 생성
+  //    (Cloudflare Worker가 쓰는 서버용 API 키와는 다른 값 — 그 키를 여기 쓰면 안 됨)
+  //  - PADDLE_ENV/PADDLE_PRICE_ID: 테스트는 샌드박스 그대로, 실제 판매 전환 시 'production'+라이브
+  //    가격 ID로 함께 교체할 것(하나만 바꾸면 결제 자체가 실패함 — worker.js의 라이브 전환 방식과 동일한 주의사항).
+  var PADDLE_ENV = 'sandbox'; // 라이브 전환 시 'production'으로 교체
+  var PADDLE_CLIENT_TOKEN = 'test_7a4cae6cd11fe4153b6a3ecbda1'; // 샌드박스 클라이언트 측 토큰(2026-08-30 발급) — 'test_'로 시작해 샌드박스 값임을 알 수 있음. 라이브 전환 시 라이브 대시보드에서 새로 발급받은 토큰(보통 'live_' 접두사)으로 교체할 것.
+  var PADDLE_PRICE_ID = 'pri_01m04myhdswd06ywgzm8gd4ra3'; // 샌드박스 가격 ID. 라이브 전환 시 'pri_01m16wdt7t59mjtpzytpsh7z09'로 교체(ROADMAP-CHECKLIST.md "결제 연동 구현" 참고)
+
+  var buyLink = document.getElementById('buyLink');
+  var buyEmail = document.getElementById('buyEmail');
+  var buyError = document.getElementById('buyError');
+
+  function isConfigured() {
+    return PADDLE_CLIENT_TOKEN !== 'REPLACE_ME_PADDLE_CLIENT_TOKEN';
+  }
+  function looksLikeEmail(v) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  }
+  function showError(msg) {
+    buyError.textContent = msg;
+    buyError.style.display = 'block';
+  }
+  // 이메일이 이메일 모양일 때만 버튼을 켠다 — 잘못된 이메일로 결제하면 나중에 확장에서
+  // 라이선스를 못 찾는 문제로 이어지므로(worker.js는 이메일 완전 일치로 조회함) 미리 막아둔다.
+  function updateButtonState() {
+    buyLink.disabled = !isConfigured() || !looksLikeEmail(buyEmail.value.trim());
+  }
+
+  // 확장의 "구매하기"에서 이 페이지를 열 때 ?email=...을 붙여 보낸다(licenseManager.ts 참고) —
+  // 있으면 미리 채워준다. 이 페이지에 직접 들어온 경우(광고·검색 등)엔 비어있는 채로 시작한다.
+  var prefillEmail = new URLSearchParams(location.search).get('email');
+  if (prefillEmail) buyEmail.value = prefillEmail;
+  updateButtonState();
+  buyEmail.addEventListener('input', updateButtonState);
+
+  if (!isConfigured()) {
+    showError('결제 시스템 설정 중입니다 — 잠시 후 다시 시도해주세요.');
+  } else if (window.Paddle) {
+    Paddle.Environment.set(PADDLE_ENV);
+    Paddle.Initialize({ token: PADDLE_CLIENT_TOKEN });
+  }
+
+  buyLink.addEventListener('click', function () {
+    if (!isConfigured() || !window.Paddle) {
+      showError('결제 시스템 설정 중입니다 — 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    var email = buyEmail.value.trim();
+    if (!looksLikeEmail(email)) return;
+    buyError.style.display = 'none';
+    Paddle.Checkout.open({
+      items: [{ priceId: PADDLE_PRICE_ID, quantity: 1 }],
+      customer: { email: email }
+    });
+  });
+})();
+</script>
 </body>
 </html>

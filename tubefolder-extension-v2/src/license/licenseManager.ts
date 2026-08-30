@@ -12,7 +12,7 @@ import {
   isLicenseConfigured,
   isLicenseKeyGranted,
   LicenseState,
-  PADDLE_CHECKOUT_URL,
+  PADDLE_BUY_PAGE_URL,
   PADDLE_VERIFY_ENDPOINT,
   verifyLicenseKey,
   writeLicenseState
@@ -69,9 +69,10 @@ export async function refreshLicenseFromManager(email?: string): Promise<License
   }
 }
 
-/** 결제 페이지(Paddle Hosted Checkout)를 새 탭으로 연다 */
+/** 결제 페이지(웹사이트, Paddle.js 오버레이 체크아웃 내장)를 새 탭으로 연다.
+ *  (2026-08-30 전환 — licenseEngine.ts의 PADDLE_BUY_PAGE_URL 주석 참고) */
 export async function openPaymentPage(email: string): Promise<void> {
-  const url = `${PADDLE_CHECKOUT_URL}?user_email=${encodeURIComponent(email)}`;
+  const url = `${PADDLE_BUY_PAGE_URL}?email=${encodeURIComponent(email)}`;
   window.open(url, '_blank');
 }
 

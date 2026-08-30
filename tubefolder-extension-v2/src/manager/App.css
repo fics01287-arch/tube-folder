@@ -466,3 +466,376 @@ select:focus-visible {
   margin: 12px 0;
   cursor: pointer;
 }
+
+/* ── 정렬 · 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") ───────────── */
+.tf-sort-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.tf-sort-select {
+  flex: none;
+  width: auto;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* 정렬 방향(오름/내림차순) 토글 버튼 — "정렬 확장" 추가 구현 */
+.tf-sort-dir-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tf-drag-handle {
+  cursor: grab;
+  color: #666;
+  font-size: 14px;
+  padding: 4px 6px;
+  flex-shrink: 0;
+  touch-action: none; /* dnd-kit PointerSensor가 터치에서 스크롤과 드래그를 구분하는 데 필요 */
+}
+
+.tf-drag-handle:hover {
+  color: #f1f1f1;
+}
+
+.tf-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* 삽입선 — 레이아웃 크기에 영향 없는 box-shadow로 그려 드래그 중 행 높이가 흔들리지 않게 한다 */
+.tf-row-drop-before {
+  box-shadow: inset 0 2px 0 0 #3ea6ff;
+}
+
+.tf-row-drop-after {
+  box-shadow: inset 0 -2px 0 0 #3ea6ff;
+}
+
+/* ── 아이콘 그리드 4종(ROADMAP 4단계 "아이콘 그리드 4종·표 보기") ───────────── */
+/* 탐색기의 "아주 큰/큰/보통/작은 아이콘" 보기에 대응. 타일 크기는 grid-template-columns의
+   minmax 하한으로 결정하고, 아이콘·썸네일·글자 크기는 사이즈별 클래스로 개별 조정한다.
+   가상 스크롤은 아직 미적용(별도 후속 작업) — 폴더당 항목 수가 아주 많으면 느려질 수 있음. */
+.tf-grid {
+  display: grid;
+  gap: 14px;
+  padding: 4px 0 8px;
+}
+
+.tf-grid-xl {
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+
+.tf-grid-large {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+}
+
+.tf-grid-medium {
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+}
+
+.tf-grid-small {
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+}
+
+.tf-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.tf-tile:hover {
+  background: #1a1a1a;
+}
+
+.tf-tile-drag-handle {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 2; /* .tf-tile-media가 position:relative(재생시간 배지용)라 DOM 순서상 위에 그려지는 문제 방지 */
+  background: rgba(15, 15, 15, 0.7);
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.tf-tile:hover .tf-tile-drag-handle,
+.tf-tile:focus-within .tf-tile-drag-handle {
+  opacity: 1;
+}
+
+.tf-tile-media {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tf-tile-icon {
+  line-height: 1;
+}
+
+.tf-grid-xl .tf-tile-icon {
+  font-size: 48px;
+}
+
+.tf-grid-large .tf-tile-icon {
+  font-size: 36px;
+}
+
+.tf-grid-medium .tf-tile-icon {
+  font-size: 28px;
+}
+
+.tf-grid-small .tf-tile-icon {
+  font-size: 20px;
+}
+
+.tf-tile-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #1f1f1f;
+}
+
+.tf-tile-duration {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #f1f1f1;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.tf-tile-name {
+  background: none;
+  border: none;
+  color: #f1f1f1;
+  cursor: pointer;
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.3;
+  padding: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+.tf-grid-xl .tf-tile-name {
+  font-size: 13px;
+}
+
+.tf-tile-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.tf-tile-edit-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.tf-tile-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.tf-tile-confirm .tf-confirm-text {
+  font-size: 11px;
+}
+
+.tf-tile-actions {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.tf-tile:hover .tf-tile-actions,
+.tf-tile:focus-within .tf-tile-actions {
+  opacity: 1;
+}
+
+.tf-tile-actions .tf-btn-icon,
+.tf-tile-actions .tf-btn-danger-outline {
+  padding: 2px 5px;
+  font-size: 11px;
+}
+
+/* 그리드용 삽입선 — 행이 아니라 타일이라 좌/우 테두리로 표시(가로로 채워지는 레이아웃이므로) */
+.tf-tile-drop-before {
+  box-shadow: inset 2px 0 0 0 #3ea6ff;
+}
+
+.tf-tile-drop-after {
+  box-shadow: inset -2px 0 0 0 #3ea6ff;
+}
+
+/* ── 표(자세히) 보기(ROADMAP 4단계 "아이콘 그리드 4종·표 보기") ───────────── */
+/* 탐색기의 "자세히 보기" 표(이름·수정한 날짜·유형·크기 열)에 대응. */
+.tf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tf-table thead th {
+  text-align: left;
+  font-weight: 600;
+  color: #999;
+  font-size: 12px;
+  padding: 0;
+  border-bottom: 1px solid #3f3f3f;
+  white-space: nowrap;
+}
+
+/* 표 보기 열 헤더 클릭 정렬(정렬 확장 추가 구현) — 헤더 셀 전체를 클릭 영역으로 */
+.tf-th-sort {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+}
+
+.tf-th-sort:hover {
+  color: #f1f1f1;
+}
+
+.tf-table tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #262626;
+  vertical-align: middle;
+}
+
+.tf-trow-handle-cell {
+  width: 24px;
+  padding: 0 !important;
+}
+
+.tf-tcell-name {
+  min-width: 160px;
+}
+
+.tf-tcell-name .tf-row-name {
+  width: auto;
+}
+
+.tf-tcell-date,
+.tf-tcell-type,
+.tf-tcell-size {
+  color: #aaa;
+  white-space: nowrap;
+}
+
+.tf-tcell-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* 삽입선 — 목록 보기와 같은 box-shadow 방식(<tr>에도 동일하게 적용됨) */
+.tf-trow.tf-row-drop-before {
+  box-shadow: inset 0 2px 0 0 #3ea6ff;
+}
+
+.tf-trow.tf-row-drop-after {
+  box-shadow: inset 0 -2px 0 0 #3ea6ff;
+}
+
+/* ── 실행취소/다시 실행 토스트 (2026-08-29 신규) ─────────────────────
+   기존 .tf-player-overlay(z-index 1000)/.tf-sync-overlay(1100)/.tf-sync-overlay-top(1200)보다
+   위에 떠서, 그런 모달이 열려 있는 도중에 토스트가 떠도 항상 보이고 클릭 가능하게 함. */
+.tf-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #1c1c1c;
+  border: 1px solid #3f3f3f;
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+  max-width: calc(100% - 48px);
+}
+
+.tf-toast-label {
+  font-size: 13px;
+  color: #f1f1f1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tf-toast-action {
+  flex-shrink: 0;
+}
+
+/* ── "다른 폴더로 이동" 대상 선택 목록 (2026-08-29 신규) ───────────────
+   기존 .tf-sync-overlay/.tf-sync-panel 모달 틀을 재사용, 내용만 새로 추가. */
+.tf-move-tree {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #262626;
+  border-radius: 8px;
+}
+
+.tf-move-tree-item {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #262626;
+  color: #f1f1f1;
+  font-size: 13px;
+  text-align: left;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.tf-move-tree li:last-child .tf-move-tree-item {
+  border-bottom: none;
+}
+
+.tf-move-tree-item:hover:not(:disabled) {
+  background: #262626;
+}
+
+.tf-move-tree-item:disabled {
+  color: #666;
+  cursor: not-allowed;
+}
