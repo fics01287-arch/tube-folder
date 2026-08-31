@@ -9,7 +9,8 @@ import { DEFAULT_FOLDER_ICON } from '../shared/folderIcons';
 
 interface MoveDialogProps {
   store: TubeStoreData;
-  node: TubeNode;
+  /** 옮길 노드들 — 단일 이동(📁 버튼)이든 다중 선택 후 일괄 이동이든 배열 하나로 통일해서 받는다. */
+  nodes: TubeNode[];
   onPick: (destFolderId: string) => void;
   onCancel: () => void;
 }
@@ -20,10 +21,12 @@ interface TreeRow {
   disabled: boolean;
 }
 
-// moveNode()의 검증 로직과 기준을 맞춘 "이동 불가" 폴더 집합: 현재 부모(=no-op)와,
-// 대상이 폴더인 경우 자기 자신+모든 하위 폴더(사이클 방지). 휴지통은 애초에 folderChildren()이
-// 걸러주므로 목록에 나오지 않는다.
-function buildInvalidSet(store: TubeStoreData, node: TubeNode): Set<string> {
+// moveNode()의 검증 로직과 기준을 맞춘 "이동 불가" 폴더 집합. 단일 노드 기준 무효 집합을
+// buildInvalidSetForNode로 구하고, 다중 선택이면 그 합집합을 쓴다(어느 하나라도 옮길 수 없는
+// 대상이면 그 폴더는 전체 목록에서 비활성화 — 일부만 성공하는 혼란스러운 상태를 피하기 위함).
+// 선택된 항목들은 항상 같은 부모 아래(현재 보고 있는 폴더)에서만 고를 수 있으므로 "현재 부모"
+// 무효 판정은 사실상 공통이고, "자기 자신+하위 폴더" 판정만 노드별로 달라진다.
+function buildInvalidSetForNode(store: TubeStoreData, node: TubeNode): Set<string> {
   const invalid = new Set<string>();
   if (node.parentId) invalid.add(node.parentId);
 
@@ -46,6 +49,14 @@ function buildInvalidSet(store: TubeStoreData, node: TubeNode): Set<string> {
   return invalid;
 }
 
+function buildInvalidSet(store: TubeStoreData, nodes: TubeNode[]): Set<string> {
+  const invalid = new Set<string>();
+  for (const node of nodes) {
+    buildInvalidSetForNode(store, node).forEach((id) => invalid.add(id));
+  }
+  return invalid;
+}
+
 function buildRows(store: TubeStoreData, invalid: Set<string>): TreeRow[] {
   const rows: TreeRow[] = [];
   const root = store.nodes[store.rootId] as FolderNode;
@@ -61,9 +72,10 @@ function buildRows(store: TubeStoreData, invalid: Set<string>): TreeRow[] {
   return rows;
 }
 
-export default function MoveDialog({ store, node, onPick, onCancel }: MoveDialogProps) {
-  const invalid = buildInvalidSet(store, node);
+export default function MoveDialog({ store, nodes, onPick, onCancel }: MoveDialogProps) {
+  const invalid = buildInvalidSet(store, nodes);
   const rows = buildRows(store, invalid);
+  const desc = nodes.length === 1 ? `"${nodes[0]?.name ?? ''}" 항목을 옮길 폴더를 선택하세요.` : `선택한 ${nodes.length}개 항목을 옮길 폴더를 선택하세요.`;
 
   return (
     <div className="tf-sync-overlay" onClick={onCancel}>
@@ -75,7 +87,7 @@ export default function MoveDialog({ store, node, onPick, onCancel }: MoveDialog
         aria-labelledby="tf-movedialog-title"
       >
         <h2 id="tf-movedialog-title">📁 다른 폴더로 이동</h2>
-        <p className="tf-sync-desc">"{node.name}" 항목을 옮길 폴더를 선택하세요.</p>
+        <p className="tf-sync-desc">{desc}</p>
         <ul className="tf-move-tree">
           {rows.map((row) => (
             <li key={row.folder.id}>

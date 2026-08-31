@@ -318,7 +318,15 @@ export default function App() {
   // undoStack.ts 모듈이 관리한다(2026-08-29 신규, ROADMAP-CHECKLIST.md 참고).
   const [toast, setToast] = useState<{ label: string; kind: 'undo' | 'redo'; ts: number } | null>(null);
   // "다른 폴더로 이동" 대상 선택 모달을 열 때, 어떤 노드를 옮기는 중인지 기억해둔다.
-  const [moveDialogNodeId, setMoveDialogNodeId] = useState<string | null>(null);
+  // "다른 폴더로 이동" 대상 선택 모달 — 단일 이동(📁 버튼)이든 다중 선택 후 일괄 이동이든
+  // 옮길 노드 id 배열 하나로 통일해서 처리한다(길이 1이면 기존 단일 이동과 동일하게 동작).
+  const [moveDialogIds, setMoveDialogIds] = useState<string[] | null>(null);
+  // 다중 선택(ROADMAP 4단계 "다중 선택 + 일괄 이동/삭제", 작업순서 2/8, 2026-08-30 산들 착수 승인) —
+  // 체크박스 클릭(추가/해제)·Shift+클릭(범위 선택)으로 고른다. 폴더를 옮기면 선택 대상 자체가
+  // 의미 없어지므로 currentFolderId가 바뀔 때마다 자동으로 비운다(아래 useEffect).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectAnchorId, setSelectAnchorId] = useState<string | null>(null);
+  const [bulkTrashConfirming, setBulkTrashConfirming] = useState(false);
   // 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") — 현재 드롭 대상 행과, 그 행의 위/아래 중 어디에 삽입될지
   const [overId, setOverId] = useState<string | null>(null);
   const [overPosition, setOverPosition] = useState<'before' | 'after' | null>(null);
@@ -326,6 +334,14 @@ export default function App() {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+
+  // 폴더를 옮겨다니면 이전 폴더에서 고른 선택 항목은 화면에서 사라지므로 의미가 없다 — 탐색기도
+  // 폴더를 바꾸면 선택이 풀리는 것과 동일한 관례.
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setSelectAnchorId(null);
+    setBulkTrashConfirming(false);
+  }, [currentFolderId]);
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -336,6 +352,7 @@ export default function App() {
 
   // 동기화 등 비동기 콜백이 "지금 보고 있는 폴더"를 유지한 채 새로고침할 수 있게 ref로 추적
   const currentFolderIdRef = useRef<string | null>(null);
+  const checkboxShiftRef = useRef(false);
   currentFolderIdRef.current = currentFolderId;
   const refreshKeepingFolder = useCallback(() => {
     refresh(currentFolderIdRef.current);
@@ -484,6 +501,36 @@ export default function App() {
     }
     return chain;
   }, [store, currentFolderId]);
+
+  // 다중 선택 토글 — 체크박스 클릭(shiftKey=false)은 그 항목 하나만 추가/해제, Shift+클릭은
+  // 마지막으로 클릭한 항목(selectAnchorId)부터 지금 클릭한 항목까지 현재 폴더 목록(children) 순서
+  // 기준으로 범위 전체를 선택한다(탐색기 Shift+클릭 관례, 기존 선택은 범위로 교체됨).
+  function toggleSelect(id: string, shiftKey: boolean) {
+    if (!store) return;
+    const orderedIds = children.filter((n) => n.id !== store.trashId).map((n) => n.id);
+    if (shiftKey && selectAnchorId) {
+      const a = orderedIds.indexOf(selectAnchorId);
+      const b = orderedIds.indexOf(id);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelectedIds(new Set(orderedIds.slice(lo, hi + 1)));
+        return;
+      }
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setSelectAnchorId(id);
+  }
+
+  // 일괄 휴지통 이동은 폴더만 가능(trashFolder가 폴더 전용 — 영상은 애초에 개별 삭제 버튼도 없음).
+  const selectedFolderIds = useMemo(
+    () => (store ? Array.from(selectedIds).filter((id) => store.nodes[id]?.type === 'folder') : []),
+    [selectedIds, store]
+  );
 
   async function handleCreateFolder() {
     setError(null);
@@ -638,16 +685,25 @@ export default function App() {
     }
   }
 
-  // 이동 다이얼로그에서 대상 폴더를 클릭하면 호출됨 — moveNode() 성공 시에만 실행취소 스택에 쌓는다.
+  // 이동 다이얼로그에서 대상 폴더를 클릭하면 호출됨 — 단일 이동(📁 버튼)과 다중 선택 후 일괄
+  // 이동(툴바) 모두 이 함수 하나로 처리한다(moveDialogIds 길이가 1이면 기존 단일 이동과 동일).
+  // moveNode()를 그대로 반복 호출 — 스냅샷은 배치 전체 시작 전 한 번만 떠서, 여러 개를 옮겨도
+  // Ctrl+Z 한 번에 전부 되돌아간다.
   async function handleConfirmMove(destFolderId: string) {
-    if (!moveDialogNodeId) return;
+    if (!moveDialogIds || moveDialogIds.length === 0) return;
     setError(null);
     try {
       const before = await load();
-      const label = `"${before.nodes[moveDialogNodeId]?.name ?? ''}" 폴더 이동`;
-      await moveNode(moveDialogNodeId, destFolderId);
+      const label =
+        moveDialogIds.length === 1
+          ? `"${before.nodes[moveDialogIds[0]]?.name ?? ''}" 폴더 이동`
+          : `${moveDialogIds.length}개 항목 이동`;
+      for (const id of moveDialogIds) {
+        await moveNode(id, destFolderId);
+      }
       pushUndo({ label, snapshot: before });
-      setMoveDialogNodeId(null);
+      setMoveDialogIds(null);
+      setSelectedIds(new Set());
       await refresh(currentFolderId);
       scheduleAutoSync();
       setToast({ label, kind: 'undo', ts: Date.now() });
@@ -665,6 +721,50 @@ export default function App() {
       const label = `"${before.nodes[id]?.name ?? ''}" 복원`;
       await restoreFromTrash(id);
       pushUndo({ label, snapshot: before });
+      await refresh(currentFolderId);
+      scheduleAutoSync();
+      setToast({ label, kind: 'undo', ts: Date.now() });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // 다중 선택 툴바의 🗑 일괄 휴지통 이동 — trashFolder가 폴더 전용이라 selectedFolderIds(영상 제외)만
+  // 대상으로 한다. 한 번 확인을 거친 뒤(bulkTrashConfirming) 실행 — 개별 삭제의 확인 절차와 같은 원칙.
+  async function handleBulkTrash() {
+    if (selectedFolderIds.length === 0) return;
+    setError(null);
+    try {
+      const before = await load();
+      const label = `${selectedFolderIds.length}개 항목 휴지통으로 이동`;
+      for (const id of selectedFolderIds) {
+        await trashFolder(id);
+      }
+      pushUndo({ label, snapshot: before });
+      setSelectedIds(new Set());
+      setBulkTrashConfirming(false);
+      await refresh(currentFolderId);
+      scheduleAutoSync();
+      setToast({ label, kind: 'undo', ts: Date.now() });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // 다중 선택 툴바의 ↩ 일괄 복원(휴지통 안에서만 노출) — handleRestore와 같은 로직을 선택된 항목
+  // 전부에 반복 적용.
+  async function handleBulkRestore() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setError(null);
+    try {
+      const before = await load();
+      const label = `${ids.length}개 항목 복원`;
+      for (const id of ids) {
+        await restoreFromTrash(id);
+      }
+      pushUndo({ label, snapshot: before });
+      setSelectedIds(new Set());
       await refresh(currentFolderId);
       scheduleAutoSync();
       setToast({ label, kind: 'undo', ts: Date.now() });
@@ -903,6 +1003,20 @@ export default function App() {
   function renderRowBody(node: TubeNode, isTrash: boolean, isFolder: boolean, store: TubeStoreData): ReactNode {
     return (
       <>
+        {!isTrash && (
+          <input
+            type="checkbox"
+            className="tf-select-checkbox"
+            checked={selectedIds.has(node.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              checkboxShiftRef.current = e.shiftKey;
+            }}
+            onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+            title="선택"
+            aria-label={`"${node.name}" 선택`}
+          />
+        )}
         {isFolder ? (
           editingId === node.id ? (
             <span className="tf-edit-row">
@@ -978,7 +1092,7 @@ export default function App() {
             </button>
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogNodeId(node.id)}
+              onClick={() => setMoveDialogIds([node.id])}
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
@@ -1011,7 +1125,7 @@ export default function App() {
           <span className="tf-row-actions">
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogNodeId(node.id)}
+              onClick={() => setMoveDialogIds([node.id])}
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
@@ -1047,6 +1161,20 @@ export default function App() {
 
     return (
       <>
+        {!isTrash && (
+          <input
+            type="checkbox"
+            className="tf-select-checkbox tf-select-checkbox-tile"
+            checked={selectedIds.has(node.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              checkboxShiftRef.current = e.shiftKey;
+            }}
+            onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+            title="선택"
+            aria-label={`"${node.name}" 선택`}
+          />
+        )}
         {isFolder && editingId === node.id ? (
           <div className="tf-tile-media">{media}</div>
         ) : (
@@ -1132,7 +1260,7 @@ export default function App() {
             </button>
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogNodeId(node.id)}
+              onClick={() => setMoveDialogIds([node.id])}
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
@@ -1165,7 +1293,7 @@ export default function App() {
           <span className="tf-tile-actions">
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogNodeId(node.id)}
+              onClick={() => setMoveDialogIds([node.id])}
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
@@ -1183,8 +1311,23 @@ export default function App() {
     isFolder: boolean,
     store: TubeStoreData
   ): { name: ReactNode; date: ReactNode; type: ReactNode; size: ReactNode; actions: ReactNode } {
-    const name =
-      isFolder && editingId === node.id ? (
+    const name = (
+      <>
+        {!isTrash && (
+          <input
+            type="checkbox"
+            className="tf-select-checkbox"
+            checked={selectedIds.has(node.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              checkboxShiftRef.current = e.shiftKey;
+            }}
+            onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+            title="선택"
+            aria-label={`"${node.name}" 선택`}
+          />
+        )}
+        {isFolder && editingId === node.id ? (
         <span className="tf-edit-row">
           <input
             className="tf-input tf-input-inline"
@@ -1212,7 +1355,9 @@ export default function App() {
         >
           {isFolder ? folderIcon(node, store) : '🎬'} {node.name}
         </button>
-      );
+      )}
+      </>
+    );
 
     const actions = (
       <>
@@ -1253,7 +1398,7 @@ export default function App() {
             </button>
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogNodeId(node.id)}
+              onClick={() => setMoveDialogIds([node.id])}
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
@@ -1286,7 +1431,7 @@ export default function App() {
           <span className="tf-row-actions">
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogNodeId(node.id)}
+              onClick={() => setMoveDialogIds([node.id])}
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
@@ -1506,6 +1651,47 @@ export default function App() {
             ))}
             <option value="details">표(자세히)</option>
           </select>
+        </div>
+      )}
+
+      {/* 다중 선택 툴바(ROADMAP 4단계 "다중 선택 + 일괄 이동/삭제", 작업순서 2/8) — 하나 이상
+          선택됐을 때만 나타난다. 휴지통 안에서는 이동/삭제 대신 일괄 복원(↩)을 보여준다(개별
+          복원 버튼과 같은 원칙 — 1/8 항목 참고). */}
+      {selectedIds.size > 0 && (
+        <div className="tf-bulk-toolbar">
+          <span className="tf-bulk-count">{selectedIds.size}개 선택됨</span>
+          <button className="tf-btn tf-btn-icon" onClick={() => setSelectedIds(new Set())}>
+            선택 해제
+          </button>
+          {currentFolderId === store.trashId ? (
+            <button className="tf-btn" onClick={handleBulkRestore}>
+              ↩ 일괄 복원
+            </button>
+          ) : (
+            <button className="tf-btn" onClick={() => setMoveDialogIds(Array.from(selectedIds))}>
+              📁 일괄 이동
+            </button>
+          )}
+          {currentFolderId === store.trashId ? null : bulkTrashConfirming ? (
+            <span className="tf-confirm-row">
+              <span className="tf-confirm-text">
+                {selectedFolderIds.length}개 항목을 휴지통으로 이동할까요?
+                {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
+              </span>
+              <button className="tf-btn tf-btn-danger-outline" onClick={handleBulkTrash}>
+                이동
+              </button>
+              <button className="tf-btn tf-btn-icon" onClick={() => setBulkTrashConfirming(false)}>
+                취소
+              </button>
+            </span>
+          ) : (
+            selectedFolderIds.length > 0 && (
+              <button className="tf-btn tf-btn-danger-outline" onClick={() => setBulkTrashConfirming(true)}>
+                🗑 일괄 휴지통 이동 ({selectedFolderIds.length}개)
+              </button>
+            )
+          )}
         </div>
       )}
 
@@ -1847,12 +2033,12 @@ export default function App() {
         </div>
       )}
 
-      {moveDialogNodeId && store && store.nodes[moveDialogNodeId] && (
+      {moveDialogIds && moveDialogIds.length > 0 && store && (
         <MoveDialog
           store={store}
-          node={store.nodes[moveDialogNodeId]}
+          nodes={moveDialogIds.map((id) => store.nodes[id]).filter((n): n is TubeNode => !!n)}
           onPick={handleConfirmMove}
-          onCancel={() => setMoveDialogNodeId(null)}
+          onCancel={() => setMoveDialogIds(null)}
         />
       )}
 

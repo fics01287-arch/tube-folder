@@ -467,6 +467,43 @@ select:focus-visible {
   cursor: pointer;
 }
 
+/* 다중 선택 툴바(ROADMAP 4단계 "다중 선택 + 일괄 이동/삭제", 작업순서 2/8) — 선택된 항목이
+   하나 이상일 때만 나타나는 안내 바. .tf-trash-policy-banner와 같은 톤(회색 배경 바)으로 통일. */
+.tf-bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1f1f1f;
+  border: 1px solid #3f3f3f;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.tf-bulk-count {
+  color: #f1f1f1;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+/* 목록·표 보기의 선택 체크박스 — 이름 버튼 앞에 항상 보이게(호버 없이) 둔다. */
+.tf-select-checkbox {
+  margin-right: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* 아이콘 그리드 보기의 선택 체크박스 — 타일 오른쪽 위 코너에 고정(왼쪽 위는 드래그 손잡이가 씀) */
+.tf-select-checkbox-tile {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  cursor: pointer;
+}
+
 /* ── 정렬 · 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") ───────────── */
 .tf-sort-control {
   display: flex;
