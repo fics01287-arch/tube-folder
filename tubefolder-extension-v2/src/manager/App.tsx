@@ -395,30 +395,6 @@ export default function App() {
     };
   }, []);
 
-  // 실행취소/다시 실행 단축키. 실행취소는 Ctrl+Z/Cmd+Z, 다시 실행은 Ctrl+Y(윈도우 관례)와
-  // Ctrl+Shift+Z/Cmd+Shift+Z(맥·여러 앱 공통 관례)를 모두 지원한다(2026-08-29 "다시 실행
-  // 기능도 추가해줘" 요청으로 추가). 이름변경 입력창 등 편집 가능한 요소에 포커스가 있을 때는
-  // 건드리지 않는다 — 브라우저 기본 텍스트 undo/redo를 앱 차원의 실행취소가 가로채면 안 되기 때문.
-  // (App.tsx에 keydown 리스너가 이것 하나뿐, 기존 리스너와 충돌 없음)
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const key = e.key.toLowerCase();
-      const mod = e.ctrlKey || e.metaKey;
-      const isUndo = mod && !e.shiftKey && key === 'z';
-      const isRedo = mod && ((e.shiftKey && key === 'z') || key === 'y');
-      if (!isUndo && !isRedo) return;
-      const el = document.activeElement;
-      const isEditable =
-        el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement | null)?.isContentEditable;
-      if (isEditable) return;
-      e.preventDefault();
-      if (isUndo) performUndo();
-      else performRedo();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [currentFolderId]);
-
   const currentFolder = store && currentFolderId ? store.nodes[currentFolderId] : null;
 
   const children = useMemo(() => {
@@ -531,6 +507,92 @@ export default function App() {
     () => (store ? Array.from(selectedIds).filter((id) => store.nodes[id]?.type === 'folder') : []),
     [selectedIds, store]
   );
+
+  // 실행취소/다시 실행/F2(이름변경)/Delete(휴지통 이동) 전역 단축키. 실행취소는 Ctrl+Z/Cmd+Z,
+  // 다시 실행은 Ctrl+Y(윈도우 관례)와 Ctrl+Shift+Z/Cmd+Shift+Z(맥·여러 앱 공통 관례)를 모두
+  // 지원한다(2026-08-29 "다시 실행 기능도 추가해줘" 요청으로 추가). F2/Delete는 다중 선택(2/8,
+  // selectedIds/selectedFolderIds)이 이미 있어야 "지금 어떤 항목에 적용할지"를 알 수 있어서
+  // 그 기능 이후로 미뤄뒀던 항목(작업순서 3/8, 2026-08-30 산들 착수 승인) — F2는 폴더 하나만
+  // 선택돼 있을 때 기존 ✏️ 버튼과 동일하게 이름변경 모드로 진입시키고(영상은 이름변경 자체가
+  // 없어 대상에서 제외), Delete는 선택된 폴더가 있으면 다중 선택 툴바의 🗑 버튼을 누른 것과
+  // 동일하게 확인 단계(bulkTrashConfirming)부터 띄운다(즉시 삭제하지 않음 — 탐색기 Delete 키도
+  // 기본적으로 확인을 거치는 것과 같은 원칙, 영상은 개별 삭제가 없어 대상에서 제외).
+  // 이름변경 입력창 등 편집 가능한 요소에 포커스가 있거나, 다른 모달/확인 UI가 이미 열려있을
+  // 때는 건드리지 않는다 — 브라우저 기본 텍스트 undo/redo를 가로채면 안 되고, 모달 뒤에서
+  // 배경 단축키가 같이 발동하면 혼란스럽기 때문. (App.tsx에 keydown 리스너가 이것 하나뿐)
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const key = e.key.toLowerCase();
+      const mod = e.ctrlKey || e.metaKey;
+      const isUndo = mod && !e.shiftKey && key === 'z';
+      const isRedo = mod && ((e.shiftKey && key === 'z') || key === 'y');
+      const isF2 = !mod && key === 'f2';
+      const isDelete = !mod && key === 'delete';
+      if (!isUndo && !isRedo && !isF2 && !isDelete) return;
+      const el = document.activeElement;
+      // 체크박스(다중 선택)에 포커스가 있는 상태에서도 F2/Delete/Ctrl+Z가 먹어야 하므로, 실제로
+      // 텍스트를 입력하는 요소(텍스트 입력창·textarea·contentEditable)만 "편집 중"으로 취급한다
+      // — HTMLInputElement라고 전부 막으면 체크박스 클릭 직후 포커스가 그 위에 남아있어 단축키가
+      // 아무 반응도 안 하는 것처럼 보이는 문제가 있었음(자체 테스트로 발견·수정).
+      const isTextInput =
+        el instanceof HTMLInputElement &&
+        !['checkbox', 'radio', 'button', 'submit', 'reset'].includes(el.type);
+      const isEditable = isTextInput || el instanceof HTMLTextAreaElement || (el as HTMLElement | null)?.isContentEditable;
+      if (isEditable) return;
+
+      if (isUndo || isRedo) {
+        e.preventDefault();
+        if (isUndo) performUndo();
+        else performRedo();
+        return;
+      }
+
+      const modalOpen = Boolean(
+        editingId ||
+          deletingId ||
+          iconPickerFolderId ||
+          trashInfoModalFolderId ||
+          (moveDialogIds && moveDialogIds.length > 0) ||
+          pendingRetentionDays !== undefined ||
+          playingVideo ||
+          emptyingTrash
+      );
+      if (modalOpen) return;
+
+      if (isF2) {
+        if (selectedIds.size !== 1) return;
+        const id = Array.from(selectedIds)[0];
+        const node = store?.nodes[id];
+        if (!node || node.type !== 'folder') return;
+        e.preventDefault();
+        setEditingId(id);
+        setEditingValue(node.name);
+        return;
+      }
+
+      if (isDelete) {
+        if (currentFolderId === store?.trashId) return; // 휴지통 안에서는 Delete로 할 동작이 없음(영구삭제 없음)
+        if (selectedFolderIds.length === 0) return;
+        e.preventDefault();
+        setBulkTrashConfirming(true);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    currentFolderId,
+    store,
+    selectedIds,
+    selectedFolderIds,
+    editingId,
+    deletingId,
+    iconPickerFolderId,
+    trashInfoModalFolderId,
+    moveDialogIds,
+    pendingRetentionDays,
+    playingVideo,
+    emptyingTrash,
+  ]);
 
   async function handleCreateFolder() {
     setError(null);
