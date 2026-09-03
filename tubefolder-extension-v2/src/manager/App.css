@@ -888,3 +888,53 @@ select:focus-visible {
   color: #666;
   cursor: not-allowed;
 }
+
+/* ── 우클릭 클립보드 컨텍스트 메뉴 (2026-08-31 신규, 작업순서 4/8) ──────────────────
+   .tf-sync-overlay(1100)보다는 아래, .tf-toast(1250)보다는 아래에 두되 일반 콘텐츠보다는
+   위 — 메뉴 자체가 모달을 겹쳐 띄우는 상황은 openContextMenu()에서 이미 막아뒀으므로
+   다른 오버레이와 동시에 뜰 일이 없어 값 자체는 크게 중요하지 않지만, 이후 다른 오버레이가
+   추가될 때 참고할 수 있도록 사이 값(1150)으로 잡음. */
+.tf-context-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+}
+
+.tf-context-menu {
+  position: fixed;
+  min-width: 148px;
+  background: #1c1c1c;
+  border: 1px solid #3f3f3f;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+
+.tf-context-menu-item {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: #f1f1f1;
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.tf-context-menu-item:hover:not(:disabled) {
+  background: #2a2a2a;
+}
+
+.tf-context-menu-item:disabled {
+  color: #666;
+  cursor: not-allowed;
+}
+
+.tf-context-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: #333;
+}

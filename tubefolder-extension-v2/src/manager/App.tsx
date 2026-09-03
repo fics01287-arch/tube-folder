@@ -10,6 +10,7 @@ import {
   addVideosToFolder,
   createFolder,
   dismissTrashInfo,
+  duplicateNode,
   emptyTrash,
   moveNode,
   previewRetentionPurgeCount,
@@ -157,6 +158,7 @@ function SortableRow({
   isOver,
   overPosition,
   dragHandleLabel,
+  onContextMenu,
   children
 }: {
   id: string;
@@ -164,6 +166,7 @@ function SortableRow({
   isOver: boolean;
   overPosition: 'before' | 'after' | null;
   dragHandleLabel: string;
+  onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
@@ -175,7 +178,7 @@ function SortableRow({
   const dropClass =
     isOver && overPosition === 'before' ? ' tf-row-drop-before' : isOver && overPosition === 'after' ? ' tf-row-drop-after' : '';
   return (
-    <li ref={setNodeRef} style={style} className={'tf-row' + dropClass}>
+    <li ref={setNodeRef} style={style} className={'tf-row' + dropClass} onContextMenu={onContextMenu}>
       {!disabled && (
         <span className="tf-drag-handle" aria-label={dragHandleLabel} {...attributes} {...listeners}>
           ⠿
@@ -218,6 +221,7 @@ function SortableGridItem({
   isOver,
   overPosition,
   dragHandleLabel,
+  onContextMenu,
   children
 }: {
   id: string;
@@ -225,6 +229,7 @@ function SortableGridItem({
   isOver: boolean;
   overPosition: 'before' | 'after' | null;
   dragHandleLabel: string;
+  onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
@@ -240,7 +245,7 @@ function SortableGridItem({
         ? ' tf-tile-drop-after'
         : '';
   return (
-    <div ref={setNodeRef} style={style} className={'tf-tile' + dropClass}>
+    <div ref={setNodeRef} style={style} className={'tf-tile' + dropClass} onContextMenu={onContextMenu}>
       {!disabled && (
         <span className="tf-drag-handle tf-tile-drag-handle" aria-label={dragHandleLabel} {...attributes} {...listeners}>
           ⠿
@@ -259,6 +264,7 @@ function SortableTableRow({
   isOver,
   overPosition,
   dragHandleLabel,
+  onContextMenu,
   children
 }: {
   id: string;
@@ -266,6 +272,7 @@ function SortableTableRow({
   isOver: boolean;
   overPosition: 'before' | 'after' | null;
   dragHandleLabel: string;
+  onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
@@ -277,7 +284,7 @@ function SortableTableRow({
   const dropClass =
     isOver && overPosition === 'before' ? ' tf-row-drop-before' : isOver && overPosition === 'after' ? ' tf-row-drop-after' : '';
   return (
-    <tr ref={setNodeRef} style={style} className={'tf-trow' + dropClass}>
+    <tr ref={setNodeRef} style={style} className={'tf-trow' + dropClass} onContextMenu={onContextMenu}>
       <td className="tf-trow-handle-cell">
         {!disabled && (
           <span className="tf-drag-handle" aria-label={dragHandleLabel} {...attributes} {...listeners}>
@@ -327,6 +334,14 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAnchorId, setSelectAnchorId] = useState<string | null>(null);
   const [bulkTrashConfirming, setBulkTrashConfirming] = useState(false);
+  // 우클릭 클립보드(복사·잘라내기·붙여넣기, 작업순서 4/8, 2026-08-31 산들 착수 승인) — 탐색기의
+  // Ctrl+C/X/V에 해당. 저장소에 남기지 않고 이 세션(탭)이 살아있는 동안만 메모리에 들고 있는다
+  // (탐색기도 클립보드는 앱 재시작하면 비워지는 것과 같은 원칙, 굳이 localStorage 등에 영속화할
+  // 이유가 없음). mode가 'copy'면 duplicateNode, 'cut'이면 기존 moveNode를 재사용해 붙여넣는다.
+  const [clipboard, setClipboard] = useState<{ mode: 'copy' | 'cut'; ids: string[] } | null>(null);
+  // 우클릭 컨텍스트 메뉴 — forNode가 true면 특정 항목 위에서 열려 복사/잘라내기도 보여주고,
+  // false면 빈 공간에서 열려 붙여넣기만 보여준다(현재 보고 있는 폴더 안 빈 곳 우클릭).
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; forNode: boolean } | null>(null);
   // 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") — 현재 드롭 대상 행과, 그 행의 위/아래 중 어디에 삽입될지
   const [overId, setOverId] = useState<string | null>(null);
   const [overPosition, setOverPosition] = useState<'before' | 'after' | null>(null);
@@ -508,18 +523,143 @@ export default function App() {
     [selectedIds, store]
   );
 
-  // 실행취소/다시 실행/F2(이름변경)/Delete(휴지통 이동) 전역 단축키. 실행취소는 Ctrl+Z/Cmd+Z,
-  // 다시 실행은 Ctrl+Y(윈도우 관례)와 Ctrl+Shift+Z/Cmd+Shift+Z(맥·여러 앱 공통 관례)를 모두
-  // 지원한다(2026-08-29 "다시 실행 기능도 추가해줘" 요청으로 추가). F2/Delete는 다중 선택(2/8,
-  // selectedIds/selectedFolderIds)이 이미 있어야 "지금 어떤 항목에 적용할지"를 알 수 있어서
-  // 그 기능 이후로 미뤄뒀던 항목(작업순서 3/8, 2026-08-30 산들 착수 승인) — F2는 폴더 하나만
-  // 선택돼 있을 때 기존 ✏️ 버튼과 동일하게 이름변경 모드로 진입시키고(영상은 이름변경 자체가
-  // 없어 대상에서 제외), Delete는 선택된 폴더가 있으면 다중 선택 툴바의 🗑 버튼을 누른 것과
-  // 동일하게 확인 단계(bulkTrashConfirming)부터 띄운다(즉시 삭제하지 않음 — 탐색기 Delete 키도
-  // 기본적으로 확인을 거치는 것과 같은 원칙, 영상은 개별 삭제가 없어 대상에서 제외).
+  // 우클릭 컨텍스트 메뉴 열기 — id가 있으면(항목 위 우클릭) 그 항목이 이미 선택돼 있지 않을 때만
+  // 선택을 그 항목 하나로 교체한다(탐색기 관례: 선택 안 된 항목을 우클릭하면 그 항목만 선택되고,
+  // 이미 여러 개 선택된 상태에서 그중 하나를 우클릭하면 선택 전체가 유지됨 — 이 경우 복사/잘라내기가
+  // 선택 전체에 적용됨). id가 없으면(빈 공간 우클릭) 붙여넣기만 보여준다. 휴지통 폴더 자체나 휴지통
+  // 안에서는 클립보드 개념이 없어 메뉴를 띄우지 않는다(기존 이동/복원 버튼 전환과 같은 원칙).
+  // e는 React.MouseEvent(항목·컨테이너에 직접 붙인 핸들러)와 네이티브 MouseEvent(아래
+  // document 레벨 배경 우클릭 폴백)를 둘 다 받을 수 있게 최소 구조 타입으로 받는다.
+  function openContextMenu(
+    e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number },
+    id: string | null
+  ) {
+    if (currentFolderId === store?.trashId) return;
+    if (id && id === store?.trashId) return;
+    // 아이콘 선택·이동 대상 선택·이름변경 등 다른 모달/편집 UI가 이미 열려있으면 겹쳐서 뜨지
+    // 않게 무시한다(전역 단축키 effect의 modalOpen 판단과 같은 기준).
+    if (editingId || deletingId || iconPickerFolderId || trashInfoModalFolderId || (moveDialogIds && moveDialogIds.length > 0) || pendingRetentionDays !== undefined || playingVideo || emptyingTrash) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if (id && !selectedIds.has(id)) {
+      setSelectedIds(new Set([id]));
+      setSelectAnchorId(id);
+    }
+    setContextMenu({ x: e.clientX, y: e.clientY, forNode: !!id });
+  }
+
+  function closeContextMenu() {
+    setContextMenu(null);
+  }
+
+  // 배경(빈 공간) 우클릭 폴백 — .tf-grid/.tf-table/.tf-list/.tf-scroll-area에 직접 붙인
+  // onContextMenu만으로는 부족하다는 걸 산들 피드백으로 발견: 이 앱은 카드형 레이아웃
+  // (.tf-app이 max-width:720px로 가운데 정렬)이라 항목이 몇 개 없으면 그 카드 자체의 실제
+  // 높이가 브라우저 창보다 훨씬 작은데, 페이지 배경(#0f0f0f)은 화면 전체를 채우고 있어서
+  // 눈에는 "빈 공간"이 카드 안팎 구분 없이 이어져 보인다 — 그런데 실제 DOM에서는 그 아래
+  // 여백이 .tf-grid 등의 테두리 밖(문서 자체)이라 위 컨테이너별 핸들러가 안 잡혔음.
+  // document에 한 번만 등록해 화면 전체를 커버한다 — 항목·컨테이너 위에서 이미 처리된
+  // 우클릭은 그쪽 openContextMenu()가 stopPropagation()을 호출해 여기까지 올라오지
+  // 않으므로 중복 실행되지 않는다. 입력창·버튼 등 실제 조작 요소 위에서는 브라우저 기본
+  // 메뉴(복사/붙여넣기 등)를 그대로 두는 게 자연스러워 그런 요소는 건드리지 않는다.
+  useEffect(() => {
+    function onDocumentContextMenu(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, button, select, a, [role="menu"], [role="dialog"]')) return;
+      openContextMenu(e, null);
+    }
+    document.addEventListener('contextmenu', onDocumentContextMenu);
+    return () => document.removeEventListener('contextmenu', onDocumentContextMenu);
+  }, [
+    currentFolderId,
+    store,
+    editingId,
+    deletingId,
+    iconPickerFolderId,
+    trashInfoModalFolderId,
+    moveDialogIds,
+    pendingRetentionDays,
+    playingVideo,
+    emptyingTrash,
+    selectedIds
+  ]);
+
+  function handleCopy() {
+    if (selectedIds.size === 0) return;
+    setClipboard({ mode: 'copy', ids: Array.from(selectedIds) });
+    closeContextMenu();
+  }
+
+  function handleCut() {
+    if (selectedIds.size === 0) return;
+    setClipboard({ mode: 'cut', ids: Array.from(selectedIds) });
+    closeContextMenu();
+  }
+
+  // 붙여넣기는 항상 "지금 보고 있는 폴더"(currentFolderId)를 대상으로 한다 — 우클릭한 항목이
+  // 폴더여도 그 폴더 "안"에 붙여넣지는 않는다(탐색기처럼 "여기에 붙여넣기" 세부 대상까지는
+  // 이번 범위에서 제외 — 범위를 좁게 유지하는 편이 혼란이 적다고 판단).
+  // 복사(copy)는 duplicateNode를 반복 호출해 사본을 만들고 클립보드를 비우지 않는다(탐색기처럼
+  // 같은 걸 여러 폴더에 반복해서 붙여넣을 수 있게). 잘라내기(cut)는 기존 moveNode를 재사용하고,
+  // 한 번 붙여넣으면 클립보드를 비운다(탐색기 관례 — 오려낸 항목은 한 번만 옮겨감).
+  // 둘 다 스냅샷은 배치 시작 전 한 번만 떠서 Ctrl+Z 한 번에 전체가 되돌아간다(2/8과 같은 패턴).
+  async function handlePaste() {
+    if (!clipboard || !currentFolderId || currentFolderId === store?.trashId) return;
+    closeContextMenu();
+    setError(null);
+    try {
+      const before = await load();
+      if (clipboard.mode === 'copy') {
+        const label =
+          clipboard.ids.length === 1 ? `"${before.nodes[clipboard.ids[0]]?.name ?? ''}" 복사` : `${clipboard.ids.length}개 항목 복사`;
+        for (const id of clipboard.ids) {
+          if (!before.nodes[id]) continue; // 복사한 뒤 원본이 지워졌으면 조용히 건너뜀
+          await duplicateNode(id, currentFolderId);
+        }
+        pushUndo({ label, snapshot: before });
+        await refresh(currentFolderId);
+        scheduleAutoSync();
+        setToast({ label, kind: 'undo', ts: Date.now() });
+      } else {
+        const label =
+          clipboard.ids.length === 1
+            ? `"${before.nodes[clipboard.ids[0]]?.name ?? ''}" 이동(붙여넣기)`
+            : `${clipboard.ids.length}개 항목 이동(붙여넣기)`;
+        for (const id of clipboard.ids) {
+          const n = before.nodes[id];
+          if (!n) continue; // 잘라낸 뒤 원본이 지워졌으면 조용히 건너뜀
+          if (n.parentId === currentFolderId) continue; // 이미 이 폴더면 moveNode 에러 대신 조용히 건너뜀
+          await moveNode(id, currentFolderId);
+        }
+        pushUndo({ label, snapshot: before });
+        setClipboard(null);
+        await refresh(currentFolderId);
+        scheduleAutoSync();
+        setToast({ label, kind: 'undo', ts: Date.now() });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // 실행취소/다시 실행/F2(이름변경)/Delete(휴지통 이동)/Ctrl+C·X·V(복사·잘라내기·붙여넣기)
+  // 전역 단축키. 실행취소는 Ctrl+Z/Cmd+Z, 다시 실행은 Ctrl+Y(윈도우 관례)와 Ctrl+Shift+Z/
+  // Cmd+Shift+Z(맥·여러 앱 공통 관례)를 모두 지원한다(2026-08-29 "다시 실행 기능도 추가해줘"
+  // 요청으로 추가). F2/Delete/Ctrl+C/X/V는 다중 선택(2/8, selectedIds/selectedFolderIds)이
+  // 이미 있어야 "지금 어떤 항목에 적용할지"를 알 수 있어서 그 기능 이후로 미뤄뒀던 항목들
+  // (작업순서 3/8·4/8, 2026-08-30 산들 착수 승인) — F2는 폴더 하나만 선택돼 있을 때 기존 ✏️
+  // 버튼과 동일하게 이름변경 모드로 진입시키고(영상은 이름변경 자체가 없어 대상에서 제외),
+  // Delete는 선택된 폴더가 있으면 다중 선택 툴바의 🗑 버튼을 누른 것과 동일하게 확인 단계
+  // (bulkTrashConfirming)부터 띄운다(즉시 삭제하지 않음 — 탐색기 Delete 키도 기본적으로 확인을
+  // 거치는 것과 같은 원칙, 영상은 개별 삭제가 없어 대상에서 제외). Ctrl+C/X는 handleCopy/
+  // handleCut, Ctrl+V는 handlePaste를 그대로 호출한다(우클릭 메뉴와 동일한 함수 재사용 — 작업순서
+  // 4/8, 우클릭 컨텍스트 메뉴 참고).
   // 이름변경 입력창 등 편집 가능한 요소에 포커스가 있거나, 다른 모달/확인 UI가 이미 열려있을
-  // 때는 건드리지 않는다 — 브라우저 기본 텍스트 undo/redo를 가로채면 안 되고, 모달 뒤에서
-  // 배경 단축키가 같이 발동하면 혼란스럽기 때문. (App.tsx에 keydown 리스너가 이것 하나뿐)
+  // 때는 건드리지 않는다 — 브라우저 기본 텍스트 undo/redo·복사/붙여넣기를 가로채면 안 되고,
+  // 모달 뒤에서 배경 단축키가 같이 발동하면 혼란스럽기 때문. (App.tsx에 keydown 리스너가
+  // 이것 하나뿐)
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const key = e.key.toLowerCase();
@@ -528,7 +668,10 @@ export default function App() {
       const isRedo = mod && ((e.shiftKey && key === 'z') || key === 'y');
       const isF2 = !mod && key === 'f2';
       const isDelete = !mod && key === 'delete';
-      if (!isUndo && !isRedo && !isF2 && !isDelete) return;
+      const isCopy = mod && !e.shiftKey && key === 'c';
+      const isCut = mod && !e.shiftKey && key === 'x';
+      const isPaste = mod && !e.shiftKey && key === 'v';
+      if (!isUndo && !isRedo && !isF2 && !isDelete && !isCopy && !isCut && !isPaste) return;
       const el = document.activeElement;
       // 체크박스(다중 선택)에 포커스가 있는 상태에서도 F2/Delete/Ctrl+Z가 먹어야 하므로, 실제로
       // 텍스트를 입력하는 요소(텍스트 입력창·textarea·contentEditable)만 "편집 중"으로 취급한다
@@ -575,6 +718,22 @@ export default function App() {
         if (selectedFolderIds.length === 0) return;
         e.preventDefault();
         setBulkTrashConfirming(true);
+        return;
+      }
+
+      if (isCopy || isCut) {
+        if (currentFolderId === store?.trashId) return; // 휴지통 안 항목은 복사/잘라내기 대상에서 제외(이동/복원 버튼과 같은 원칙)
+        if (selectedIds.size === 0) return;
+        e.preventDefault();
+        if (isCopy) handleCopy();
+        else handleCut();
+        return;
+      }
+
+      if (isPaste) {
+        if (!clipboard || currentFolderId === store?.trashId) return;
+        e.preventDefault();
+        handlePaste();
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -592,7 +751,19 @@ export default function App() {
     pendingRetentionDays,
     playingVideo,
     emptyingTrash,
+    clipboard,
   ]);
+
+  // 우클릭 컨텍스트 메뉴는 열려있을 때만 리스너를 등록해 Esc로 닫는다(위 전역 단축키 effect와
+  // 분리한 이유: contextMenu가 열고 닫힐 때마다 저 큰 리스너를 통째로 재등록할 필요는 없음).
+  useEffect(() => {
+    if (!contextMenu) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') closeContextMenu();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [contextMenu]);
 
   async function handleCreateFolder() {
     setError(null);
@@ -1758,7 +1929,7 @@ export default function App() {
       )}
 
       {useVirtual ? (
-        <div className="tf-scroll-area" ref={scrollParentRef}>
+        <div className="tf-scroll-area" ref={scrollParentRef} onContextMenu={(e) => openContextMenu(e, null)}>
           {isGrid ? (
             <div
               ref={gridContainerRef}
@@ -1786,7 +1957,7 @@ export default function App() {
                       const isTrash = node.id === store.trashId;
                       const isFolder = node.type === 'folder';
                       return (
-                        <div key={node.id} className="tf-tile">
+                        <div key={node.id} className="tf-tile" onContextMenu={(e) => openContextMenu(e, node.id)}>
                           {renderTileBody(node, isTrash, isFolder, store)}
                         </div>
                       );
@@ -1830,6 +2001,7 @@ export default function App() {
                       role="row"
                       className="tf-vtable-row"
                       style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vItem.start}px)` }}
+                      onContextMenu={(e) => openContextMenu(e, node.id)}
                     >
                       <div className="tf-vtable-cell tf-trow-handle-cell" />
                       <div className="tf-vtable-cell tf-tcell-name">{c.name}</div>
@@ -1855,6 +2027,7 @@ export default function App() {
                     data-index={vItem.index}
                     className="tf-row"
                     style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vItem.start}px)` }}
+                    onContextMenu={(e) => openContextMenu(e, node.id)}
                   >
                     {renderRowBody(node, isTrash, isFolder, store)}
                   </li>
@@ -1876,7 +2049,7 @@ export default function App() {
         >
           <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
             {isGrid ? (
-              <div className={`tf-grid tf-grid-${store.settings.view}`}>
+              <div className={`tf-grid tf-grid-${store.settings.view}`} onContextMenu={(e) => openContextMenu(e, null)}>
                 {children.length === 0 && <p className="tf-empty">비어 있습니다.</p>}
                 {children.map((node) => {
                   const isTrash = node.id === store.trashId;
@@ -1899,6 +2072,7 @@ export default function App() {
                       isOver={overId === node.id}
                       overPosition={overId === node.id ? overPosition : null}
                       dragHandleLabel={`"${node.name}" 드래그로 순서 변경`}
+                      onContextMenu={(e) => openContextMenu(e, node.id)}
                     >
                       {tileBody}
                     </SortableGridItem>
@@ -1906,7 +2080,7 @@ export default function App() {
                 })}
               </div>
             ) : isTable ? (
-              <table className="tf-table">
+              <table className="tf-table" onContextMenu={(e) => openContextMenu(e, null)}>
                 <thead>
                   <tr>
                     <th className="tf-trow-handle-cell" aria-hidden="true" />
@@ -1969,6 +2143,7 @@ export default function App() {
                         isOver={overId === node.id}
                         overPosition={overId === node.id ? overPosition : null}
                         dragHandleLabel={`"${node.name}" 드래그로 순서 변경`}
+                        onContextMenu={(e) => openContextMenu(e, node.id)}
                       >
                         {cells}
                       </SortableTableRow>
@@ -1977,7 +2152,7 @@ export default function App() {
                 </tbody>
               </table>
             ) : (
-              <ul className="tf-list">
+              <ul className="tf-list" onContextMenu={(e) => openContextMenu(e, null)}>
                 {children.length === 0 && <li className="tf-empty">비어 있습니다.</li>}
                 {children.map((node) => {
                   const isTrash = node.id === store.trashId;
@@ -2000,6 +2175,7 @@ export default function App() {
                       isOver={overId === node.id}
                       overPosition={overId === node.id ? overPosition : null}
                       dragHandleLabel={`"${node.name}" 드래그로 순서 변경`}
+                      onContextMenu={(e) => openContextMenu(e, node.id)}
                     >
                       {rowBody}
                     </SortableRow>
@@ -2009,6 +2185,42 @@ export default function App() {
             )}
           </SortableContext>
         </DndContext>
+      )}
+
+      {contextMenu && (
+        <div
+          className="tf-context-menu-overlay"
+          onClick={closeContextMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeContextMenu();
+          }}
+        >
+          <div
+            className="tf-context-menu"
+            style={{
+              left: Math.min(contextMenu.x, window.innerWidth - 168),
+              top: Math.min(contextMenu.y, window.innerHeight - 132)
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="menu"
+          >
+            {contextMenu.forNode && (
+              <>
+                <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleCopy}>
+                  복사
+                </button>
+                <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleCut}>
+                  잘라내기
+                </button>
+                <div className="tf-context-menu-sep" role="separator" />
+              </>
+            )}
+            <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handlePaste} disabled={!clipboard}>
+              붙여넣기{clipboard ? ` (${clipboard.ids.length}개)` : ''}
+            </button>
+          </div>
+        </div>
       )}
 
       {playingVideo && <PlayerOverlay key={playingVideo.id} video={playingVideo} onClose={handleClosePlayer} />}

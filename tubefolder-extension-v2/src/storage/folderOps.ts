@@ -491,6 +491,135 @@ export async function moveNode(nodeId: string, newParentId: string): Promise<voi
   await save(data);
 }
 
+/**
+ * 노드(폴더는 하위 트리 전체, 영상은 그 자체) 사본을 다른 폴더 안에 만든다 — 탐색기의
+ * "복사→붙여넣기"에 해당(잘라내기→붙여넣기는 기존 moveNode 재사용, 우클릭 클립보드
+ * 작업순서 4/8, 2026-08-31 신규). 원본은 그대로 두고 모든 자손을 새 id로 다시 만들어
+ * 대상 폴더 밑에 연결한다 — 하위 트리를 옮기기만 하는 moveNode와 달리 여기선 실제로
+ * 노드를 복제해야 한다.
+ * 무료 티어 한도(폴더/영상 개수)는 createFolder/addVideosToFolder와 같은 기준으로 검사—
+ * 복사도 "새로 만드는 것"이라 한도를 우회하면 안 됨. 폴더 하나라도 한도를 넘기면(부분
+ * 복사는 어디까지 됐는지 알기 어려워 혼란스러우므로) 전체를 거부한다.
+ */
+export async function duplicateNode(nodeId: string, destFolderId: string): Promise<string> {
+  const data = await load();
+  const source = data.nodes[nodeId];
+  if (!source) throw new FolderOpError('항목을 찾을 수 없습니다.');
+  if (source.id === data.rootId || source.id === data.trashId) {
+    throw new FolderOpError('이 폴더는 복사할 수 없습니다.');
+  }
+  if (source.type === 'folder' && source.system === 'trash') {
+    throw new FolderOpError('이 폴더는 복사할 수 없습니다.');
+  }
+
+  const dest = data.nodes[destFolderId];
+  if (!dest || dest.type !== 'folder') throw new FolderOpError('붙여넣을 폴더를 찾을 수 없습니다.');
+  if (destFolderId === data.trashId) throw new FolderOpError('휴지통에는 붙여넣을 수 없습니다.');
+
+  // moveNode의 사이클 방지와 같은 이유로, 폴더를 그 자신의 하위 폴더 안에 복사하는 것도 막는다
+  // (원본은 그대로 두지만, 복사 도중 원본 자손 목록을 그대로 훑으므로 대상이 자손 중 하나면
+  // 방금 만든 사본 안에 사본을 또 만들며 무한히 깊어지는 잘못된 결과가 됨).
+  if (source.type === 'folder') {
+    const descendants = new Set<string>([source.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const k in data.nodes) {
+        const n = data.nodes[k];
+        if (!descendants.has(n.id) && n.parentId && descendants.has(n.parentId)) {
+          descendants.add(n.id);
+          grew = true;
+        }
+      }
+    }
+    if (descendants.has(destFolderId)) {
+      throw new FolderOpError('폴더를 그 하위 폴더에 복사할 수 없습니다.');
+    }
+  }
+
+  const gateActive = isLicenseAvailable() && !(await isPaidCached());
+  if (gateActive) {
+    let newFolderCount = source.type === 'folder' ? 1 : 0;
+    let newVideoCount = source.type === 'video' ? 1 : 0;
+    if (source.type === 'folder') {
+      const stack = [source.id];
+      while (stack.length) {
+        const pid = stack.pop() as string;
+        for (const k in data.nodes) {
+          const n = data.nodes[k];
+          if (n.parentId === pid) {
+            if (n.type === 'folder') {
+              newFolderCount++;
+              stack.push(n.id);
+            } else {
+              newVideoCount++;
+            }
+          }
+        }
+      }
+    }
+    if (countUserFolders(data) + newFolderCount > FREE_FOLDER_LIMIT) {
+      throw new LicenseLimitError(
+        'folder-limit',
+        `무료 버전은 폴더를 최대 ${FREE_FOLDER_LIMIT}개까지 만들 수 있습니다. 더 만들려면 업그레이드가 필요합니다.`
+      );
+    }
+    if (countVideos(data) + newVideoCount > FREE_VIDEO_LIMIT) {
+      throw new LicenseLimitError(
+        'video-limit',
+        `무료 버전은 영상을 최대 ${FREE_VIDEO_LIMIT}개까지 담을 수 있습니다. 더 담으려면 업그레이드가 필요합니다.`
+      );
+    }
+  }
+
+  const t = now();
+  const meta = await newNodeMeta();
+  const idMap = new Map<string, string>();
+
+  function cloneOne(orig: TubeNode, newParentId: string, siblingsForOrder: TubeNode[]): TubeNode {
+    const newId = uid();
+    idMap.set(orig.id, newId);
+    const clone: TubeNode = {
+      ...orig,
+      id: newId,
+      parentId: newParentId,
+      name: uniqueName(siblingsForOrder, orig.name),
+      order: nextOrder(data, newParentId),
+      createdAt: t,
+      modifiedAt: t,
+      ...meta
+    };
+    delete clone.prevParentId; // 사본은 휴지통 이력과 무관(원본이 휴지통에 있었더라도 사본은 정상 위치에서 새 항목으로 시작)
+    data.nodes[newId] = clone;
+    siblingsForOrder.push(clone);
+    return clone;
+  }
+
+  const destSiblings = childrenOf(data, destFolderId).filter((n) => n.id !== data.trashId);
+  const rootCopy = cloneOne(source, destFolderId, destSiblings);
+
+  if (source.type === 'folder') {
+    // 부모 단위로 자식들을 모아 원본 순서(order)대로 복제해야 사본도 같은 순서를 유지한다
+    // (무작위 순회로 하나씩 복제하면 order가 뒤섞임).
+    const queue: string[] = [source.id];
+    while (queue.length) {
+      const origParentId = queue.shift() as string;
+      const newParentId = idMap.get(origParentId) as string;
+      const kids = childrenOf(data, origParentId)
+        .filter((n) => n.id !== data.trashId)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const newSiblings = childrenOf(data, newParentId);
+      for (const kid of kids) {
+        cloneOne(kid, newParentId, newSiblings);
+        if (kid.type === 'folder') queue.push(kid.id);
+      }
+    }
+  }
+
+  await save(data);
+  return rootCopy.id;
+}
+
 /** 폴더(+하위 트리 전체)를 휴지통으로 이동. 완전삭제가 아니라 소프트 삭제(ALGORITHMS.md trashNodes와 동일). */
 export async function trashFolder(folderId: string): Promise<void> {
   const data = await load();
