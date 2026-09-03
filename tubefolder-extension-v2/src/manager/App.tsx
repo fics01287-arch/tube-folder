@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
-import type { DragEndEvent, DragMoveEvent } from '@dnd-kit/core';
+import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCenter, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -157,6 +157,7 @@ function SortableRow({
   disabled,
   isOver,
   overPosition,
+  coDragging,
   dragHandleLabel,
   onContextMenu,
   children
@@ -165,6 +166,7 @@ function SortableRow({
   disabled: boolean;
   isOver: boolean;
   overPosition: 'before' | 'after' | 'into' | null;
+  coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
@@ -173,7 +175,7 @@ function SortableRow({
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1
+    opacity: isDragging || coDragging ? 0.4 : 1
   };
   const dropClass =
     isOver && overPosition === 'before'
@@ -226,6 +228,7 @@ function SortableGridItem({
   disabled,
   isOver,
   overPosition,
+  coDragging,
   dragHandleLabel,
   onContextMenu,
   children
@@ -234,6 +237,7 @@ function SortableGridItem({
   disabled: boolean;
   isOver: boolean;
   overPosition: 'before' | 'after' | 'into' | null;
+  coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
@@ -242,7 +246,7 @@ function SortableGridItem({
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1
+    opacity: isDragging || coDragging ? 0.4 : 1
   };
   const dropClass =
     isOver && overPosition === 'before'
@@ -271,6 +275,7 @@ function SortableTableRow({
   disabled,
   isOver,
   overPosition,
+  coDragging,
   dragHandleLabel,
   onContextMenu,
   children
@@ -279,6 +284,7 @@ function SortableTableRow({
   disabled: boolean;
   isOver: boolean;
   overPosition: 'before' | 'after' | 'into' | null;
+  coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
@@ -287,7 +293,7 @@ function SortableTableRow({
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1
+    opacity: isDragging || coDragging ? 0.4 : 1
   };
   const dropClass =
     isOver && overPosition === 'before'
@@ -392,6 +398,11 @@ export default function App() {
   // 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") — 현재 드롭 대상 행과, 그 행의 위/아래 중 어디에 삽입될지
   const [overId, setOverId] = useState<string | null>(null);
   const [overPosition, setOverPosition] = useState<'before' | 'after' | 'into' | null>(null);
+  // 드래그를 시작한 항목 자체(dnd-kit의 유일한 "active") — 여러 개를 선택한 채 그중 하나를 끌면
+  // handleDragEnd에서 선택 전체를 옮기지만, 화면에는 이 항목 하나만 커서를 따라 움직여서 "한 개만
+  // 옮기는 것처럼 보인다"는 피드백을 받아 추가(2026-09-03) — 나머지 선택 항목들도 같이 흐리게
+  // 표시해 "다같이 들려 있다"는 느낌을 주고, 여러 개일 땐 개수 배지를 커서 옆에 띄운다.
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const dragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -474,6 +485,12 @@ export default function App() {
 
   // 드래그 재배치 대상 id 목록 — 휴지통 제외(항상 마지막 고정, 드래그 불가)
   const sortableIds = useMemo(() => children.filter((n) => n.id !== store?.trashId).map((n) => n.id), [children, store]);
+  // handleDragEnd의 idsToMove와 같은 규칙(드래그 시작 항목이 다중 선택의 일부면 선택 전체) —
+  // 드래그 중 시각 피드백(흐리게 표시할 항목들, 배지 개수)에 그대로 재사용.
+  const activeDragIds = useMemo(() => {
+    if (!activeDragId) return [];
+    return selectedIds.has(activeDragId) && selectedIds.size > 1 ? Array.from(selectedIds) : [activeDragId];
+  }, [activeDragId, selectedIds]);
   const isManualSort = store?.settings.sortKey === 'none';
   const isGrid = !!store && GRID_VIEW_KEYS.has(store.settings.view);
   const isTable = store?.settings.view === 'details';
@@ -916,6 +933,10 @@ export default function App() {
   // 위함(픽셀 중심선 비교는 가상화 없는 목록에서도 드래그 중 다른 행이 함께 움직이며 어긋날 수 있었음).
   // dnd-kit의 onDragOver는 대상(overId)이 바뀔 때만 발동해서(같은 대상 위에서 계속 움직여도
   // 재계산되지 않음) 존 판정을 못 함 - 포인터가 움직일 때마다 계속 발동하는 onDragMove로 대신 연결.
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragId(String(event.active.id));
+  }
+
   function handleDragMove(event: DragMoveEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) {
@@ -933,8 +954,24 @@ export default function App() {
     const activeNode = store?.nodes[String(active.id)];
     const targetIsFolder = !!overNode && overNode.type === 'folder' && overNode.id !== store?.trashId;
     const alreadyInside = !!activeNode && activeNode.parentId === overNode?.id;
+
+    // 이름순/날짜순 등 자동 정렬에서는 order 필드를 sortNodes()가 무시하므로 형제 순서변경 자체가
+    // 화면에 반영되지 않는다 — 그래서 이 모드에서는 "폴더 안으로 이동"만 지원하고 삽입선(순서변경)
+    // 판정은 아예 하지 않는다(폴더 위 어디에 놓든 전부 into, 폴더가 아니면 무효). 다중 선택 드래그도
+    // 마찬가지로 into 전용으로 처리 — ①여러 항목을 형제 사이 어느 위치로 "함께" 끼워 넣을지는 애초에
+    // 잘 정의되지 않는 조작이고 ②DragOverlay가 렌더링되는 동안(개수 배지 표시) dnd-kit이 충돌 판정에
+    // 원래 타일이 아니라 오버레이 칩의(훨씬 작은) rect를 쓰게 돼 세로 비율 계산 자체가 부정확해짐.
+    if (!isManualSort || activeDragIds.length > 1) {
+      setOverPosition(targetIsFolder && !alreadyInside ? 'into' : null);
+      return;
+    }
+
     const activeRect = active.rect.current.translated;
 
+    // 대상이 폴더이고(휴지통 제외) 이미 그 폴더 안이 아니면, 드래그 중인 항목의 세로 중심이
+    // 대상 세로 영역 가운데 50%에 들어올 때만 "그 폴더 안으로 이동"(into)으로 판정한다.
+    // 위/아래 25%씩은 기존 순서변경(삽입선)과 동일하게 처리 — 탐색기에서 아이콘 정중앙 부근에
+    // 놓아야 "그 안으로 들어가는" 동작과 같은 관례를 따른 것.
     if (targetIsFolder && !alreadyInside && activeRect) {
       const activeCenterY = activeRect.top + activeRect.height / 2;
       const ratio = (activeCenterY - over.rect.top) / over.rect.height;
@@ -956,6 +993,7 @@ export default function App() {
     const dropPosition = overPosition;
     setOverId(null);
     setOverPosition(null);
+    setActiveDragId(null);
     const { active, over } = event;
     if (!over || active.id === over.id || !currentFolderId) return;
 
@@ -1021,6 +1059,11 @@ export default function App() {
       }
       return;
     }
+
+    // 자동 정렬 모드이거나 다중 선택 드래그면 순서변경을 하지 않는다(위 handleDragMove의 into-only
+    // 우회 분기와 같은 이유 — 여기 도달했다는 건 유효하지 않은 드롭이라는 뜻이지, 드래그를 시작한
+    // 항목 하나만 슬쩍 순서를 바꿔도 된다는 뜻이 아니다. 아무 것도 하지 않는다).
+    if (!isManualSort || activeDragIds.length > 1) return;
 
     const oldIndex = sortableIds.indexOf(String(active.id));
     const newIndex = sortableIds.indexOf(String(over.id));
@@ -2177,11 +2220,13 @@ export default function App() {
         <DndContext
           sensors={dragSensors}
           collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
           onDragCancel={() => {
             setOverId(null);
             setOverPosition(null);
+            setActiveDragId(null);
           }}
         >
           <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
@@ -2205,10 +2250,11 @@ export default function App() {
                     <SortableGridItem
                       key={node.id}
                       id={node.id}
-                      disabled={!isManualSort}
+                      disabled={false}
                       isOver={overId === node.id}
                       overPosition={overId === node.id ? overPosition : null}
-                      dragHandleLabel={`"${node.name}" 드래그로 순서 변경`}
+                      coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
+                      dragHandleLabel={`"${node.name}" 드래그로 이동`}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
                     >
                       {tileBody}
@@ -2275,10 +2321,11 @@ export default function App() {
                       <SortableTableRow
                         key={node.id}
                         id={node.id}
-                        disabled={!isManualSort}
+                        disabled={false}
                         isOver={overId === node.id}
                         overPosition={overId === node.id ? overPosition : null}
-                        dragHandleLabel={`"${node.name}" 드래그로 순서 변경`}
+                        coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
+                        dragHandleLabel={`"${node.name}" 드래그로 이동`}
                         onContextMenu={(e) => openContextMenu(e, node.id)}
                       >
                         {cells}
@@ -2307,10 +2354,11 @@ export default function App() {
                     <SortableRow
                       key={node.id}
                       id={node.id}
-                      disabled={!isManualSort}
+                      disabled={false}
                       isOver={overId === node.id}
                       overPosition={overId === node.id ? overPosition : null}
-                      dragHandleLabel={`"${node.name}" 드래그로 순서 변경`}
+                      coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
+                      dragHandleLabel={`"${node.name}" 드래그로 이동`}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
                     >
                       {rowBody}
@@ -2320,6 +2368,22 @@ export default function App() {
               </ul>
             )}
           </SortableContext>
+          {/* 여러 개를 선택한 채 드래그하면 실제로 커서를 따라 움직이는 dnd-kit 요소는 하나뿐이라
+              "한 개만 옮기는 것처럼 보인다"는 피드백이 있었음(2026-09-03) — 나머지 선택 항목은
+              coDragging으로 흐리게 표시하고, 여기서는 "N개 항목" 배지를 커서 옆에 띄워 다같이
+              옮겨지고 있음을 알려준다. 단일 항목 드래그는 기존처럼 항목 자체가 커서를 따라가는
+              것으로 충분해 배지를 띄우지 않는다. */}
+          <DragOverlay>
+            {activeDragId && activeDragIds.length > 1 && store?.nodes[activeDragId] ? (
+              <div className="tf-drag-overlay-chip">
+                <span className="tf-drag-overlay-icon">
+                  {store.nodes[activeDragId].type === 'folder' ? folderIcon(store.nodes[activeDragId], store) : '🎬'}
+                </span>
+                <span className="tf-drag-overlay-name">{store.nodes[activeDragId].name}</span>
+                <span className="tf-drag-count-badge">{activeDragIds.length}</span>
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       )}
 

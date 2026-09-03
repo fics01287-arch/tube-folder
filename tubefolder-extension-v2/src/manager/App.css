@@ -839,6 +839,57 @@ select:focus-visible {
   background: rgba(62, 166, 255, 0.14);
 }
 
+/* ── 드래그 오버레이 칩 (2026-09-03 신규) ─────────────────────
+   DragOverlay로 렌더링 — 원래 항목 자체의 transform이 dnd-kit에 의해 멈추는 대신(표준 동작)
+   이 칩이 커서를 따라 움직인다. 단일 항목을 끌 때도 "뭔가 커서를 따라간다"는 느낌을 주기 위해
+   항상 렌더링하고, 여러 개를 선택해 끌 때만 오른쪽 위에 개수 배지를 추가로 붙인다(원래 항목들은
+   coDragging으로 제자리에서 흐려짐 — 이 칩+배지가 "다같이 옮겨지고 있다"는 신호를 준다). */
+.tf-drag-overlay-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1c1c1c;
+  border: 1px solid #3f3f3f;
+  color: #f1f1f1;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  pointer-events: none;
+  cursor: grabbing;
+}
+
+.tf-drag-overlay-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.tf-drag-overlay-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tf-drag-count-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  background: #3ea6ff;
+  color: #0f0f0f;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
 /* ── 실행취소/다시 실행 토스트 (2026-08-29 신규) ─────────────────────
    기존 .tf-player-overlay(z-index 1000)/.tf-sync-overlay(1100)/.tf-sync-overlay-top(1200)보다
    위에 떠서, 그런 모달이 열려 있는 도중에 토스트가 떠도 항상 보이고 클릭 가능하게 함. */
