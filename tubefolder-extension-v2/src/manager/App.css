@@ -554,6 +554,14 @@ select:focus-visible {
   box-shadow: inset 0 -2px 0 0 #3ea6ff;
 }
 
+/* "폴더 안으로 이동" 하이라이트 — 삽입선(위/아래 얇은 선)과 구분되게 항목 전체를 감싸는 링 +
+   은은한 배경 틴트로 표시(탐색기에서 파일을 폴더 위에 올렸을 때 폴더가 강조되는 것과 같은 관례) */
+.tf-row-drop-into {
+  box-shadow: inset 0 0 0 2px #3ea6ff;
+  background: rgba(62, 166, 255, 0.14);
+  border-radius: 6px;
+}
+
 /* ── 아이콘 그리드 4종(ROADMAP 4단계 "아이콘 그리드 4종·표 보기") ───────────── */
 /* 탐색기의 "아주 큰/큰/보통/작은 아이콘" 보기에 대응. 타일 크기는 grid-template-columns의
    minmax 하한으로 결정하고, 아이콘·썸네일·글자 크기는 사이즈별 클래스로 개별 조정한다.
@@ -744,6 +752,13 @@ select:focus-visible {
   box-shadow: inset -2px 0 0 0 #3ea6ff;
 }
 
+/* "폴더 안으로 이동" 하이라이트 — 타일 버전(위 목록용 .tf-row-drop-into와 동일한 원칙) */
+.tf-tile-drop-into {
+  box-shadow: inset 0 0 0 2px #3ea6ff;
+  background: rgba(62, 166, 255, 0.14);
+  border-radius: 8px;
+}
+
 /* ── 표(자세히) 보기(ROADMAP 4단계 "아이콘 그리드 4종·표 보기") ───────────── */
 /* 탐색기의 "자세히 보기" 표(이름·수정한 날짜·유형·크기 열)에 대응. */
 .tf-table {
@@ -816,6 +831,12 @@ select:focus-visible {
 
 .tf-trow.tf-row-drop-after {
   box-shadow: inset 0 -2px 0 0 #3ea6ff;
+}
+
+/* "폴더 안으로 이동" 하이라이트 — 표(자세히) 보기용(위 .tf-row-drop-into와 동일한 원칙) */
+.tf-trow.tf-row-drop-into {
+  box-shadow: inset 0 0 0 2px #3ea6ff;
+  background: rgba(62, 166, 255, 0.14);
 }
 
 /* ── 실행취소/다시 실행 토스트 (2026-08-29 신규) ─────────────────────

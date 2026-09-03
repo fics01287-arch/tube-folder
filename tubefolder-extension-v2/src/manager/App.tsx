@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
-import type { DragEndEvent, DragOverEvent } from '@dnd-kit/core';
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent, DragMoveEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -164,7 +164,7 @@ function SortableRow({
   id: string;
   disabled: boolean;
   isOver: boolean;
-  overPosition: 'before' | 'after' | null;
+  overPosition: 'before' | 'after' | 'into' | null;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
@@ -176,7 +176,13 @@ function SortableRow({
     opacity: isDragging ? 0.4 : 1
   };
   const dropClass =
-    isOver && overPosition === 'before' ? ' tf-row-drop-before' : isOver && overPosition === 'after' ? ' tf-row-drop-after' : '';
+    isOver && overPosition === 'before'
+      ? ' tf-row-drop-before'
+      : isOver && overPosition === 'after'
+        ? ' tf-row-drop-after'
+        : isOver && overPosition === 'into'
+          ? ' tf-row-drop-into'
+          : '';
   return (
     <li ref={setNodeRef} style={style} className={'tf-row' + dropClass} onContextMenu={onContextMenu}>
       {!disabled && (
@@ -227,7 +233,7 @@ function SortableGridItem({
   id: string;
   disabled: boolean;
   isOver: boolean;
-  overPosition: 'before' | 'after' | null;
+  overPosition: 'before' | 'after' | 'into' | null;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
@@ -243,7 +249,9 @@ function SortableGridItem({
       ? ' tf-tile-drop-before'
       : isOver && overPosition === 'after'
         ? ' tf-tile-drop-after'
-        : '';
+        : isOver && overPosition === 'into'
+          ? ' tf-tile-drop-into'
+          : '';
   return (
     <div ref={setNodeRef} style={style} className={'tf-tile' + dropClass} onContextMenu={onContextMenu}>
       {!disabled && (
@@ -270,7 +278,7 @@ function SortableTableRow({
   id: string;
   disabled: boolean;
   isOver: boolean;
-  overPosition: 'before' | 'after' | null;
+  overPosition: 'before' | 'after' | 'into' | null;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
   children: ReactNode;
@@ -282,7 +290,13 @@ function SortableTableRow({
     opacity: isDragging ? 0.4 : 1
   };
   const dropClass =
-    isOver && overPosition === 'before' ? ' tf-row-drop-before' : isOver && overPosition === 'after' ? ' tf-row-drop-after' : '';
+    isOver && overPosition === 'before'
+      ? ' tf-row-drop-before'
+      : isOver && overPosition === 'after'
+        ? ' tf-row-drop-after'
+        : isOver && overPosition === 'into'
+          ? ' tf-row-drop-into'
+          : '';
   return (
     <tr ref={setNodeRef} style={style} className={'tf-trow' + dropClass} onContextMenu={onContextMenu}>
       <td className="tf-trow-handle-cell">
@@ -294,6 +308,39 @@ function SortableTableRow({
       </td>
       {children}
     </tr>
+  );
+}
+
+// 휴지통 타일을 드롭 대상으로 등록 — 형제 정렬용 SortableContext의 sortableIds에는 휴지통을 일부러
+// 넣지 않으므로(항상 맨 끝 고정, 순서변경 불가) 별도로 useDroppable을 붙여야 드래그 오버 시 over로
+// 잡힌다. 기존 tf-tile-drop-into/tf-row-drop-into 하이라이트를 그대로 재사용(새 CSS 불필요).
+// (SortableRow 등과 마찬가지로 모듈 최상위에 둬야 함 — App 안에 두면 렌더마다 새 함수로 취급돼
+// 드래그 중(포인터 이동마다 재렌더되는 handleDragMove 때문에) 매번 리마운트되어 버림.)
+function TrashDropZoneTile({ id, children }: { id: string; children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div ref={setNodeRef} className={'tf-tile' + (isOver ? ' tf-tile-drop-into' : '')}>
+      {children}
+    </div>
+  );
+}
+
+function TrashDropZoneRow({ id, children }: { id: string; children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <tr ref={setNodeRef} className={'tf-trow' + (isOver ? ' tf-row-drop-into' : '')}>
+      <td className="tf-trow-handle-cell" />
+      {children}
+    </tr>
+  );
+}
+
+function TrashDropZoneListItem({ id, children }: { id: string; children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <li ref={setNodeRef} className={'tf-row' + (isOver ? ' tf-row-drop-into' : '')}>
+      {children}
+    </li>
   );
 }
 
@@ -344,7 +391,7 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; forNode: boolean } | null>(null);
   // 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") — 현재 드롭 대상 행과, 그 행의 위/아래 중 어디에 삽입될지
   const [overId, setOverId] = useState<string | null>(null);
-  const [overPosition, setOverPosition] = useState<'before' | 'after' | null>(null);
+  const [overPosition, setOverPosition] = useState<'before' | 'after' | 'into' | null>(null);
   const dragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -867,7 +914,9 @@ export default function App() {
   // 어느 쪽에 삽입선을 그릴지는 픽셀 위치가 아니라 "지금 순서에서 활성 항목이 대상보다 뒤에 있는가"로
   // 판단한다 — 실제 드롭 결과(handleDragEnd의 arrayMove는 항상 대상 위치로 끼워 넣음)와 항상 일치시키기
   // 위함(픽셀 중심선 비교는 가상화 없는 목록에서도 드래그 중 다른 행이 함께 움직이며 어긋날 수 있었음).
-  function handleDragOver(event: DragOverEvent) {
+  // dnd-kit의 onDragOver는 대상(overId)이 바뀔 때만 발동해서(같은 대상 위에서 계속 움직여도
+  // 재계산되지 않음) 존 판정을 못 함 - 포인터가 움직일 때마다 계속 발동하는 onDragMove로 대신 연결.
+  function handleDragMove(event: DragMoveEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) {
       setOverId(null);
@@ -875,16 +924,104 @@ export default function App() {
       return;
     }
     setOverId(String(over.id));
+
+    // 대상이 폴더이고(휴지통 제외) 이미 그 폴더 안이 아니면, 드래그 중인 항목의 세로 중심이
+    // 대상 세로 영역 가운데 50%에 들어올 때만 "그 폴더 안으로 이동"(into)으로 판정한다.
+    // 위/아래 25%씩은 기존 순서변경(삽입선)과 동일하게 처리 — 탐색기에서 아이콘 정중앙 부근에
+    // 놓아야 "그 안으로 들어가는" 동작과 같은 관례를 따른 것.
+    const overNode = store?.nodes[String(over.id)];
+    const activeNode = store?.nodes[String(active.id)];
+    const targetIsFolder = !!overNode && overNode.type === 'folder' && overNode.id !== store?.trashId;
+    const alreadyInside = !!activeNode && activeNode.parentId === overNode?.id;
+    const activeRect = active.rect.current.translated;
+
+    if (targetIsFolder && !alreadyInside && activeRect) {
+      const activeCenterY = activeRect.top + activeRect.height / 2;
+      const ratio = (activeCenterY - over.rect.top) / over.rect.height;
+      if (ratio > 0.25 && ratio < 0.75) {
+        setOverPosition('into');
+        return;
+      }
+    }
+
+    // 어느 쪽에 삽입선을 그릴지는 픽셀 위치가 아니라 "지금 순서에서 활성 항목이 대상보다 뒤에 있는가"로
+    // 판단한다 — 실제 드롭 결과(handleDragEnd의 arrayMove는 항상 대상 위치로 끼워 넣음)와 항상 일치시키기
+    // 위함(픽셀 중심선 비교는 가상화 없는 목록에서도 드래그 중 다른 행이 함께 움직이며 어긋날 수 있었음).
     const activeIndex = sortableIds.indexOf(String(active.id));
     const targetIndex = sortableIds.indexOf(String(over.id));
     setOverPosition(activeIndex > targetIndex ? 'before' : 'after');
   }
 
   async function handleDragEnd(event: DragEndEvent) {
+    const dropPosition = overPosition;
     setOverId(null);
     setOverPosition(null);
     const { active, over } = event;
     if (!over || active.id === over.id || !currentFolderId) return;
+
+    // 드래그를 시작한 항목이 "이미 선택돼 있던 다중 선택"의 일부이면, 그 선택 전체를 함께
+    // 옮긴다(탐색기에서 여러 개 선택 후 하나를 끌면 전부 같이 움직이는 것과 동일한 관례).
+    // 단일 항목만 선택돼 있었거나 선택 밖의 항목을 끈 경우는 그 항목 하나만 대상.
+    const activeId = String(active.id);
+    const idsToMove =
+      selectedIds.has(activeId) && selectedIds.size > 1 ? Array.from(selectedIds) : [activeId];
+
+    // 휴지통 타일 위로 드롭 — 선택(또는 단일 드래그 항목) 중 폴더만 골라 일괄 휴지통 이동으로 처리한다.
+    // trashFolder()는 폴더 전용이라 영상은 대상에서 제외(개별 영상 삭제는 아직 범위 밖 — 기존
+    // handleBulkTrash의 selectedFolderIds 필터링과 같은 원칙). 폴더가 하나도 없으면(영상만 드래그)
+    // 조용히 무시한다.
+    if (over.id === store?.trashId) {
+      const idsToTrash = idsToMove.filter((id) => store?.nodes[id]?.type === 'folder');
+      if (idsToTrash.length === 0) return;
+      setError(null);
+      try {
+        const before = await load();
+        const label =
+          idsToTrash.length === 1
+            ? `"${before.nodes[idsToTrash[0]]?.name ?? ''}" 휴지통으로 이동`
+            : `${idsToTrash.length}개 항목 휴지통으로 이동`;
+        for (const id of idsToTrash) {
+          await trashFolder(id);
+        }
+        pushUndo({ label, snapshot: before });
+        setSelectedIds(new Set());
+        await refresh(currentFolderId);
+        scheduleAutoSync();
+        setToast({ label, kind: 'undo', ts: Date.now() });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+
+    // "into" 판정이었던 드롭 — 순서변경이 아니라 moveNode()로 그 폴더 안으로 이동시킨다.
+    // 자기 하위 폴더로 옮기려는 시도 등 유효하지 않은 이동은 moveNode 자체가 거부하며,
+    // 그 경우 항목은 원래 자리에 그대로 남고(내용 변경 없음) 에러 배너로 사유를 안내한다.
+    if (dropPosition === 'into') {
+      const destFolderId = String(over.id);
+      const ids = idsToMove.filter((id) => id !== destFolderId);
+      if (ids.length === 0) return;
+      setError(null);
+      try {
+        const before = await load();
+        const label =
+          ids.length === 1
+            ? `"${before.nodes[ids[0]]?.name ?? ''}" → "${before.nodes[destFolderId]?.name ?? ''}" 폴더로 이동`
+            : `${ids.length}개 항목 → "${before.nodes[destFolderId]?.name ?? ''}" 폴더로 이동`;
+        for (const id of ids) {
+          await moveNode(id, destFolderId);
+        }
+        pushUndo({ label, snapshot: before });
+        setSelectedIds(new Set());
+        await refresh(currentFolderId);
+        scheduleAutoSync();
+        setToast({ label, kind: 'undo', ts: Date.now() });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+
     const oldIndex = sortableIds.indexOf(String(active.id));
     const newIndex = sortableIds.indexOf(String(over.id));
     if (oldIndex === -1 || newIndex === -1) return;
@@ -2040,7 +2177,7 @@ export default function App() {
         <DndContext
           sensors={dragSensors}
           collisionDetection={closestCenter}
-          onDragOver={handleDragOver}
+          onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
           onDragCancel={() => {
             setOverId(null);
@@ -2058,9 +2195,9 @@ export default function App() {
 
                   if (isTrash) {
                     return (
-                      <div key={node.id} className="tf-tile">
+                      <TrashDropZoneTile key={node.id} id={node.id}>
                         {tileBody}
-                      </div>
+                      </TrashDropZoneTile>
                     );
                   }
 
@@ -2128,10 +2265,9 @@ export default function App() {
 
                     if (isTrash) {
                       return (
-                        <tr key={node.id} className="tf-trow">
-                          <td className="tf-trow-handle-cell" />
+                        <TrashDropZoneRow key={node.id} id={node.id}>
                           {cells}
-                        </tr>
+                        </TrashDropZoneRow>
                       );
                     }
 
@@ -2161,9 +2297,9 @@ export default function App() {
 
                   if (isTrash) {
                     return (
-                      <li key={node.id} className="tf-row">
+                      <TrashDropZoneListItem key={node.id} id={node.id}>
                         {rowBody}
-                      </li>
+                      </TrashDropZoneListItem>
                     );
                   }
 
