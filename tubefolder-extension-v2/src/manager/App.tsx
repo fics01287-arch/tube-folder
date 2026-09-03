@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCenter, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
@@ -38,7 +38,19 @@ import LicenseControl from './LicenseControl';
 import AppInfo from './AppInfo';
 import Toast from './Toast';
 import MoveDialog from './MoveDialog';
-import { pushUndo, popUndo, pushRedo, popRedo, pushUndoFromRedo, clearUndo } from './undoStack';
+import {
+  pushUndo,
+  popUndo,
+  pushRedo,
+  popRedo,
+  pushUndoFromRedo,
+  clearUndo,
+  subscribeUndoStack,
+  getUndoSize,
+  getRedoSize,
+  peekUndoLabel,
+  peekRedoLabel
+} from './undoStack';
 import { runSync, scheduleAutoSync } from '../sync/syncEngine';
 import { LicenseLimitError } from '../license/licenseEngine';
 
@@ -377,6 +389,11 @@ export default function App() {
   // 실행취소(undo) — 토스트에 뭘 보여줄지만 이 컴포넌트가 들고 있고, 실제 스택 데이터는
   // undoStack.ts 모듈이 관리한다(2026-08-29 신규, ROADMAP-CHECKLIST.md 참고).
   const [toast, setToast] = useState<{ label: string; kind: 'undo' | 'redo'; ts: number } | null>(null);
+  // 상시 실행취소/다시 실행 버튼(2026-09-03, 화면 하단 토스트 버튼의 시인성 문제로 상단에 신설) —
+  // undoStack.ts는 React state가 아닌 모듈 전역이라 useSyncExternalStore로 구독해 개수만 반응형으로
+  // 받는다. 개수가 0이면 버튼을 흐리게(disabled) 표시.
+  const undoSize = useSyncExternalStore(subscribeUndoStack, getUndoSize);
+  const redoSize = useSyncExternalStore(subscribeUndoStack, getRedoSize);
   // "다른 폴더로 이동" 대상 선택 모달을 열 때, 어떤 노드를 옮기는 중인지 기억해둔다.
   // "다른 폴더로 이동" 대상 선택 모달 — 단일 이동(📁 버튼)이든 다중 선택 후 일괄 이동이든
   // 옮길 노드 id 배열 하나로 통일해서 처리한다(길이 1이면 기존 단일 이동과 동일하게 동작).
@@ -1869,6 +1886,32 @@ export default function App() {
       <header className="tf-header">
         <div className="tf-header-row">
           <h1>튜브폴더</h1>
+          {/* 상시 실행취소/다시 실행 버튼(2026-09-03, 산들 요청) — 기존 토스트 하단 버튼은
+              작업 후 잠깐만 보여 시인성이 떨어진다는 피드백으로, 헤더에 항상 떠 있고 되돌릴/
+              다시 적용할 게 없을 때는 흐리게(disabled) 보이는 버튼 쌍을 추가했다. undoStack.ts의
+              subscribeUndoStack을 통해 개수가 바뀔 때마다 자동으로 활성/비활성이 갱신된다. */}
+          <div className="tf-undo-redo-group">
+            <button
+              type="button"
+              className="tf-btn tf-btn-icon tf-undo-redo-btn"
+              onClick={performUndo}
+              disabled={undoSize === 0}
+              title={undoSize > 0 ? `실행취소: ${peekUndoLabel()}` : '실행취소할 작업이 없습니다'}
+              aria-label="실행취소"
+            >
+              ↩ 실행취소
+            </button>
+            <button
+              type="button"
+              className="tf-btn tf-btn-icon tf-undo-redo-btn"
+              onClick={performRedo}
+              disabled={redoSize === 0}
+              title={redoSize > 0 ? `다시 실행: ${peekRedoLabel()}` : '다시 실행할 작업이 없습니다'}
+              aria-label="다시 실행"
+            >
+              ↪ 다시 실행
+            </button>
+          </div>
           <LicenseControl openSignal={licenseOpenSignal} />
           <SyncControl onLocalDataChanged={refreshKeepingFolder} />
           <AppInfo />

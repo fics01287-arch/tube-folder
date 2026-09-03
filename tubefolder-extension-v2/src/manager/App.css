@@ -146,6 +146,31 @@ select:focus-visible {
   cursor: pointer;
 }
 
+/* 상시 실행취소/다시 실행 버튼(2026-09-03 신규) — 헤더에 항상 떠 있고, 되돌릴/다시 적용할 게
+   없을 때는(undoSize===0 / redoSize===0) disabled로 흐리게 표시된다(산들 요청: "실행취소 할
+   것이 없을 때는 흐린 버튼으로 표시되게 해줘"). .tf-btn-icon 공용 스타일은 그대로 쓰고 이
+   버튼에만 disabled 시 흐려지는 규칙을 추가한다(다른 tf-btn-icon 버튼은 disabled를 쓰지 않아
+   영향 없음). */
+.tf-undo-redo-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tf-undo-redo-btn {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tf-undo-redo-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tf-undo-redo-btn:hover:not(:disabled) {
+  background: rgba(241, 241, 241, 0.08);
+}
+
 .tf-error-banner {
   background: #3a1f1f;
   color: #ff8a8a;

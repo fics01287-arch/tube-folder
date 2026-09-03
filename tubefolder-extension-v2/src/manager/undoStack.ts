@@ -28,6 +28,30 @@ const MAX_ENTRIES = 20;
 let undoStack: UndoEntry[] = [];
 let redoStack: UndoEntry[] = [];
 
+// 상시 실행취소/다시 실행 버튼(2026-09-03 신규, 기존 토스트 하단 버튼은 시인성이 떨어진다는
+// 피드백으로 화면 상단으로 옮김)이 "지금 되돌릴/다시 적용할 게 있는지"를 React 상태로 반영해야
+// 하는데, 이 스택은 React state가 아니라 모듈 전역 변수라 변경 시점을 알려줄 방법이 필요하다 —
+// 아주 단순한 구독자 목록을 두고, 스택이 바뀔 때마다(push/pop 전부) notify()로 알린다.
+// App.tsx는 useSyncExternalStore(subscribe, getUndoSize)로 구독해서 개수만 반응형으로 받는다.
+const listeners = new Set<() => void>();
+
+export function subscribeUndoStack(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function notify(): void {
+  listeners.forEach((listener) => listener());
+}
+
+export function getUndoSize(): number {
+  return undoStack.length;
+}
+
+export function getRedoSize(): number {
+  return redoStack.length;
+}
+
 function pushCapped(arr: UndoEntry[], entry: UndoEntry): void {
   arr.push(entry);
   if (arr.length > MAX_ENTRIES) arr.shift();
@@ -41,11 +65,14 @@ function pushCapped(arr: UndoEntry[], entry: UndoEntry): void {
 export function pushUndo(entry: UndoEntry): void {
   pushCapped(undoStack, entry);
   redoStack = [];
+  notify();
 }
 
 /** 가장 최근 액션을 꺼낸다(LIFO). 되돌릴 게 없으면 null. */
 export function popUndo(): UndoEntry | null {
-  return undoStack.pop() ?? null;
+  const entry = undoStack.pop() ?? null;
+  notify();
+  return entry;
 }
 
 /**
@@ -55,11 +82,14 @@ export function popUndo(): UndoEntry | null {
  */
 export function pushRedo(entry: UndoEntry): void {
   pushCapped(redoStack, entry);
+  notify();
 }
 
 /** 가장 최근에 되돌렸던 액션을 꺼낸다(LIFO). 다시 적용할 게 없으면 null. */
 export function popRedo(): UndoEntry | null {
-  return redoStack.pop() ?? null;
+  const entry = redoStack.pop() ?? null;
+  notify();
+  return entry;
 }
 
 /**
@@ -69,6 +99,7 @@ export function popRedo(): UndoEntry | null {
  */
 export function pushUndoFromRedo(entry: UndoEntry): void {
   pushCapped(undoStack, entry);
+  notify();
 }
 
 /** 실행취소 스택 맨 위 라벨만 필요할 때(토스트 텍스트 등) — 꺼내지 않고 들여다보기만 함. */
@@ -85,4 +116,5 @@ export function peekRedoLabel(): string | null {
 export function clearUndo(): void {
   undoStack = [];
   redoStack = [];
+  notify();
 }
