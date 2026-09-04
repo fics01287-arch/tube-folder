@@ -38,6 +38,7 @@ import LicenseControl from './LicenseControl';
 import AppInfo from './AppInfo';
 import Toast from './Toast';
 import MoveDialog from './MoveDialog';
+import BackupControl from './BackupControl';
 import {
   pushUndo,
   popUndo,
@@ -1924,6 +1925,13 @@ export default function App() {
           <h1>튜브폴더</h1>
           <LicenseControl openSignal={licenseOpenSignal} />
           <SyncControl onLocalDataChanged={refreshKeepingFolder} />
+          <BackupControl
+            onLocalDataChanged={refreshKeepingFolder}
+            onUndoableAction={(label, before) => {
+              pushUndo({ label, snapshot: before });
+              setToast({ label, kind: 'undo', ts: Date.now() });
+            }}
+          />
           <AppInfo />
         </div>
         <p className="tf-subtitle">
