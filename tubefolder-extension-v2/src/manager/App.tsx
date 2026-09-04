@@ -227,6 +227,9 @@ const GRID_VIEW_KEYS = new Set(GRID_VIEWS.map((v) => v.key));
 //   (직접 순서로 수천 개를 일일이 드래그 정렬하는 경우는 현실적으로 드묾 — 그런 대량 폴더는 이름/날짜/
 //   유형/크기 정렬을 쓰는 게 자연스러움). 값은 상수라 필요시 산들이 쉽게 조정 가능.
 const VIRTUALIZE_THRESHOLD = 60;
+// 이전 폴더(뒤로가기) 버튼용 방문 기록 스택 최대 길이(2026-09-03 신규) — undoStack.ts의
+// MAX_ENTRIES(20)보다 넉넉하게 잡음(단순 폴더 이동 기록이라 undo 스냅샷보다 훨씬 가벼움).
+const MAX_FOLDER_HISTORY = 50;
 
 // 그리드 타일 최소 너비 — App.css의 .tf-grid-xl/large/medium/small(minmax 하한)과 반드시 일치시켜야
 // 컨테이너 너비 기준 열 개수 계산(가상 그리드 행 묶음)이 실제 CSS 레이아웃과 어긋나지 않는다.
@@ -365,6 +368,11 @@ function TrashDropZoneListItem({ id, children }: { id: string; children: ReactNo
 export default function App() {
   const [store, setStore] = useState<TubeStoreData | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  // 이전 폴더(뒤로가기) 버튼용 방문 기록(2026-09-03 신규, 산들 스크린샷 지시) — 탐색기의
+  // 뒤로가기처럼 부모/자식 관계와 무관하게 '방금 전에 보고 있던 폴더'로 돌아간다. 실제 사용자
+  // 탐색(navigateToFolder)에서만 쌓이고, 새로고침·동기화로 인한 자동 setCurrentFolderId에는
+  // 관여하지 않는다(아래 refresh() 등은 여전히 setCurrentFolderId를 직접 호출).
+  const [folderHistory, setFolderHistory] = useState<string[]>([]);
   const [newFolderName, setNewFolderName] = useState('새 폴더');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
@@ -432,6 +440,34 @@ export default function App() {
     setSelectAnchorId(null);
     setBulkTrashConfirming(false);
   }, [currentFolderId]);
+
+  // 실제 "사용자가 다른 폴더를 열었다"에 해당하는 지점(목록/그리드/표에서 폴더 열기, breadcrumb
+  // 클릭, 상위 폴더 이동)은 전부 setCurrentFolderId를 직접 부르는 대신 이 함수를 거치게 해서
+  // 방문 기록을 쌓는다. refresh()의 setCurrentFolderId(동기화·되돌리기 등으로 인한 자동 갱신)는
+  // 사용자가 직접 이동한 게 아니므로 일부러 이 함수를 거치지 않고 그대로 둔다.
+  function navigateToFolder(id: string) {
+    if (currentFolderId && currentFolderId !== id) {
+      setFolderHistory((h) => [...h, currentFolderId].slice(-MAX_FOLDER_HISTORY));
+    }
+    setCurrentFolderId(id);
+  }
+
+  // ◀ 이전 폴더 — 부모/자식 관계와 무관하게 방문 기록(LIFO)에서 하나 꺼내 그 폴더로 돌아간다.
+  // 브라우저 뒤로가기와 같은 개념(다시 앞으로 가는 "다음 폴더" 버튼은 이번 범위 밖).
+  function handleGoBack() {
+    if (folderHistory.length === 0) return;
+    const prevId = folderHistory[folderHistory.length - 1];
+    setFolderHistory((h) => h.slice(0, -1));
+    setCurrentFolderId(prevId);
+  }
+
+  // ▲ 상위 폴더 — 지금 폴더의 부모로 한 단계만 이동. navigateToFolder를 거치므로 이 이동도
+  // "이전 폴더"로 다시 되돌아올 수 있다(탐색기에서 위로 이동도 뒤로가기 기록에 남는 것과 동일).
+  function handleGoUp() {
+    const parentId = currentFolderId ? store?.nodes[currentFolderId]?.parentId : null;
+    if (!parentId) return;
+    navigateToFolder(parentId);
+  }
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
     const data = await load();
@@ -1469,7 +1505,7 @@ export default function App() {
               </button>
             </span>
           ) : (
-            <button className="tf-row-name" onClick={() => setCurrentFolderId(node.id)} title="열기">
+            <button className="tf-row-name" onClick={() => navigateToFolder(node.id)} title="열기">
               {folderIcon(node, store)} {node.name}
             </button>
           )
@@ -1610,7 +1646,7 @@ export default function App() {
         ) : (
           <button
             className="tf-tile-media tf-tile-media-btn"
-            onClick={() => (isFolder ? setCurrentFolderId(node.id) : handleVideoClick(node))}
+            onClick={() => (isFolder ? navigateToFolder(node.id) : handleVideoClick(node))}
             title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
             aria-label={isFolder ? `"${node.name}" 열기` : `"${node.name}" 재생`}
           >
@@ -1643,7 +1679,7 @@ export default function App() {
         ) : (
           <button
             className="tf-tile-name"
-            onClick={() => (isFolder ? setCurrentFolderId(node.id) : handleVideoClick(node))}
+            onClick={() => (isFolder ? navigateToFolder(node.id) : handleVideoClick(node))}
             title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
           >
             {node.name}
@@ -1780,7 +1816,7 @@ export default function App() {
       ) : (
         <button
           className="tf-row-name"
-          onClick={() => (isFolder ? setCurrentFolderId(node.id) : handleVideoClick(node))}
+          onClick={() => (isFolder ? navigateToFolder(node.id) : handleVideoClick(node))}
           title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
         >
           {isFolder ? folderIcon(node, store) : '🎬'} {node.name}
@@ -1886,32 +1922,6 @@ export default function App() {
       <header className="tf-header">
         <div className="tf-header-row">
           <h1>튜브폴더</h1>
-          {/* 상시 실행취소/다시 실행 버튼(2026-09-03, 산들 요청) — 기존 토스트 하단 버튼은
-              작업 후 잠깐만 보여 시인성이 떨어진다는 피드백으로, 헤더에 항상 떠 있고 되돌릴/
-              다시 적용할 게 없을 때는 흐리게(disabled) 보이는 버튼 쌍을 추가했다. undoStack.ts의
-              subscribeUndoStack을 통해 개수가 바뀔 때마다 자동으로 활성/비활성이 갱신된다. */}
-          <div className="tf-undo-redo-group">
-            <button
-              type="button"
-              className="tf-btn tf-btn-icon tf-undo-redo-btn"
-              onClick={performUndo}
-              disabled={undoSize === 0}
-              title={undoSize > 0 ? `실행취소: ${peekUndoLabel()}` : '실행취소할 작업이 없습니다'}
-              aria-label="실행취소"
-            >
-              ↩ 실행취소
-            </button>
-            <button
-              type="button"
-              className="tf-btn tf-btn-icon tf-undo-redo-btn"
-              onClick={performRedo}
-              disabled={redoSize === 0}
-              title={redoSize > 0 ? `다시 실행: ${peekRedoLabel()}` : '다시 실행할 작업이 없습니다'}
-              aria-label="다시 실행"
-            >
-              ↪ 다시 실행
-            </button>
-          </div>
           <LicenseControl openSignal={licenseOpenSignal} />
           <SyncControl onLocalDataChanged={refreshKeepingFolder} />
           <AppInfo />
@@ -1936,7 +1946,7 @@ export default function App() {
               className="tf-breadcrumb-btn"
               disabled={node.id === currentFolderId}
               aria-current={node.id === currentFolderId ? 'page' : undefined}
-              onClick={() => setCurrentFolderId(node.id)}
+              onClick={() => navigateToFolder(node.id)}
             >
               {folderIcon(node, store)} {node.name}
             </button>
@@ -2056,59 +2066,117 @@ export default function App() {
         </div>
       )}
 
-      {currentFolder.id !== store.trashId && children.length > 0 && (
-        <div className="tf-sort-control">
-          <label className="tf-sort-label" htmlFor="tf-sort-select">
-            정렬
-          </label>
-          <select
-            id="tf-sort-select"
-            className="tf-input tf-sort-select"
-            value={store.settings.sortKey}
-            onChange={(e) => handleSortModeChange(e.target.value as Settings['sortKey'])}
-          >
-            <option value="name">이름순</option>
-            <option value="date">날짜순</option>
-            <option value="type">유형순</option>
-            <option value="size">크기순</option>
-            <option value="none">직접 순서(드래그로 정렬)</option>
-          </select>
-
-          {!isManualSort && (
-            <button
-              type="button"
-              className="tf-btn tf-btn-icon tf-sort-dir-btn"
-              onClick={() => handleSortDirChange(store.settings.sortDir === 'asc' ? 'desc' : 'asc')}
-              title={store.settings.sortDir === 'asc' ? '오름차순 (클릭하면 내림차순으로)' : '내림차순 (클릭하면 오름차순으로)'}
-              aria-label={
-                store.settings.sortDir === 'asc'
-                  ? '오름차순 정렬 중, 클릭하면 내림차순으로 전환'
-                  : '내림차순 정렬 중, 클릭하면 오름차순으로 전환'
-              }
+      {/* 정렬/보기 컨트롤 + 상시 네비게이션(이전 폴더·상위 폴더)/실행취소·다시 실행 버튼 한 줄
+          (2026-09-03, 산들 스크린샷 지시로 배치 — 기존엔 정렬/보기만 있던 줄이었고, 항목이 없거나
+          휴지통 안이면 이 줄 자체가 안 보였음). 네비게이션·실행취소 버튼은 정렬/보기가 없는 상황
+          (빈 폴더·휴지통 안)에서도 계속 써야 하므로 바깥 조건(children.length > 0 등) 밖에 둬서
+          이 줄 자체는 항상 렌더링하고, 정렬/보기 쪽만 조건부로 보인다. */}
+      <div className="tf-sort-control">
+        {currentFolder.id !== store.trashId && children.length > 0 && (
+          <>
+            <label className="tf-sort-label" htmlFor="tf-sort-select">
+              정렬
+            </label>
+            <select
+              id="tf-sort-select"
+              className="tf-input tf-sort-select"
+              value={store.settings.sortKey}
+              onChange={(e) => handleSortModeChange(e.target.value as Settings['sortKey'])}
             >
-              {store.settings.sortDir === 'asc' ? '↑' : '↓'}
-            </button>
-          )}
+              <option value="name">이름순</option>
+              <option value="date">날짜순</option>
+              <option value="type">유형순</option>
+              <option value="size">크기순</option>
+              <option value="none">직접 순서(드래그로 정렬)</option>
+            </select>
 
-          <label className="tf-sort-label" htmlFor="tf-view-select">
-            보기
-          </label>
-          <select
-            id="tf-view-select"
-            className="tf-input tf-sort-select"
-            value={isGrid || isTable ? store.settings.view : 'list'}
-            onChange={(e) => handleViewChange(e.target.value as Settings['view'])}
+            {!isManualSort && (
+              <button
+                type="button"
+                className="tf-btn tf-btn-icon tf-sort-dir-btn"
+                onClick={() => handleSortDirChange(store.settings.sortDir === 'asc' ? 'desc' : 'asc')}
+                title={store.settings.sortDir === 'asc' ? '오름차순 (클릭하면 내림차순으로)' : '내림차순 (클릭하면 오름차순으로)'}
+                aria-label={
+                  store.settings.sortDir === 'asc'
+                    ? '오름차순 정렬 중, 클릭하면 내림차순으로 전환'
+                    : '내림차순 정렬 중, 클릭하면 오름차순으로 전환'
+                }
+              >
+                {store.settings.sortDir === 'asc' ? '↑' : '↓'}
+              </button>
+            )}
+
+            <label className="tf-sort-label" htmlFor="tf-view-select">
+              보기
+            </label>
+            <select
+              id="tf-view-select"
+              className="tf-input tf-sort-select"
+              value={isGrid || isTable ? store.settings.view : 'list'}
+              onChange={(e) => handleViewChange(e.target.value as Settings['view'])}
+            >
+              <option value="list">목록</option>
+              {GRID_VIEWS.map((v) => (
+                <option key={v.key} value={v.key}>
+                  {v.label}
+                </option>
+              ))}
+              <option value="details">표(자세히)</option>
+            </select>
+          </>
+        )}
+
+        <div className="tf-nav-toolbar-group">
+          <button
+            type="button"
+            className="tf-btn tf-btn-icon tf-undo-redo-btn"
+            onClick={handleGoBack}
+            disabled={folderHistory.length === 0}
+            title={
+              folderHistory.length > 0
+                ? `이전 폴더로: "${store.nodes[folderHistory[folderHistory.length - 1]]?.name ?? ''}"`
+                : '이동 기록이 없습니다'
+            }
+            aria-label="이전 폴더"
           >
-            <option value="list">목록</option>
-            {GRID_VIEWS.map((v) => (
-              <option key={v.key} value={v.key}>
-                {v.label}
-              </option>
-            ))}
-            <option value="details">표(자세히)</option>
-          </select>
+            ◀ 이전 폴더
+          </button>
+          <button
+            type="button"
+            className="tf-btn tf-btn-icon tf-undo-redo-btn"
+            onClick={handleGoUp}
+            disabled={!currentFolder.parentId}
+            title={
+              currentFolder.parentId
+                ? `상위 폴더로: "${store.nodes[currentFolder.parentId]?.name ?? ''}"`
+                : '최상위 폴더입니다'
+            }
+            aria-label="상위 폴더"
+          >
+            ▲ 상위 폴더
+          </button>
+          <button
+            type="button"
+            className="tf-btn tf-btn-icon tf-undo-redo-btn"
+            onClick={performUndo}
+            disabled={undoSize === 0}
+            title={undoSize > 0 ? `실행취소: ${peekUndoLabel()}` : '실행취소할 작업이 없습니다'}
+            aria-label="실행취소"
+          >
+            ↩ 실행취소
+          </button>
+          <button
+            type="button"
+            className="tf-btn tf-btn-icon tf-undo-redo-btn"
+            onClick={performRedo}
+            disabled={redoSize === 0}
+            title={redoSize > 0 ? `다시 실행: ${peekRedoLabel()}` : '다시 실행할 작업이 없습니다'}
+            aria-label="다시 실행"
+          >
+            ↪ 다시 실행
+          </button>
         </div>
-      )}
+      </div>
 
       {/* 다중 선택 툴바(ROADMAP 4단계 "다중 선택 + 일괄 이동/삭제", 작업순서 2/8) — 하나 이상
           선택됐을 때만 나타난다. 휴지통 안에서는 이동/삭제 대신 일괄 복원(↩)을 보여준다(개별
