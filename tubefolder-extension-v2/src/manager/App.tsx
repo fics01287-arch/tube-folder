@@ -237,8 +237,17 @@ const MAX_FOLDER_HISTORY = 50;
 const GRID_TILE_MIN_WIDTH: Record<string, number> = { xl: 132, large: 104, medium: 84, small: 64 };
 const GRID_GAP = 14; // App.css .tf-grid의 gap과 일치
 
-// 그리드 타일용 드래그 손잡이 — 목록 보기(SortableRow)와 같은 이유로 타일 전체가 아니라
-// 좌상단 작은 손잡이(⠿)에만 dnd-kit 리스너를 걸어, 타일 클릭(열기)·이름변경·삭제 버튼과 겹치지 않게 한다.
+// 그리드 타일용 드래그 손잡이 — 왼쪽 위 작은 손잡이(⠿)뿐 아니라 아이콘 자체로도 드래그를 시작할
+// 수 있게 dnd-kit 리스너를 renderTileBody의 아이콘 버튼에도 함께 건다(2026-09-04, 산들 스크린샷 지적
+// — "이동 또는 복사할 때 흰 사각형[=손잡이] 부분을 클릭해야 되는데, 아이콘을 클릭해도 작동하게 해줘").
+// 이게 클릭(열기)과 충돌하지 않는 이유: dragSensors의 PointerSensor가 activationConstraint.distance=4로
+// 설정돼 있어(handleDragEnd 근처 정의), 포인터가 4px 이상 움직이기 전까지는 dnd-kit이 드래그로 인식하지
+// 않고 그냥 일반 클릭(버튼의 onClick=열기)으로 통과시킨다 — 아이콘 손잡이를 추가해도 "가만히 클릭하면
+// 열리고, 누른 채 끌면 이동한다"는 동작이 그대로 유지된다. children을 렌더-prop 함수로 바꿔 이 훅의
+// attributes/listeners를 renderTileBody 쪽으로 내려보낸다(이름변경 입력창·삭제 버튼 등 다른 요소는
+// 그대로 손잡이 없이 유지 — 아이콘 버튼 하나에만 추가).
+type DragHandleProps = Pick<ReturnType<typeof useSortable>, 'attributes' | 'listeners'>;
+
 function SortableGridItem({
   id,
   disabled,
@@ -256,7 +265,7 @@ function SortableGridItem({
   coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
-  children: ReactNode;
+  children: (dragProps: DragHandleProps) => ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
   const style: React.CSSProperties = {
@@ -279,7 +288,7 @@ function SortableGridItem({
           ⠿
         </span>
       )}
-      {children}
+      {children({ attributes, listeners })}
     </div>
   );
 }
@@ -1604,11 +1613,19 @@ export default function App() {
     );
   }
 
-  function renderTileBody(node: TubeNode, isTrash: boolean, isFolder: boolean, store: TubeStoreData): ReactNode {
+  function renderTileBody(
+    node: TubeNode,
+    isTrash: boolean,
+    isFolder: boolean,
+    store: TubeStoreData,
+    dragProps?: DragHandleProps
+  ): ReactNode {
     // (신설 2026-08-30, 산들 지적 — "아이콘 그림을 클릭해도 안 열린다") 목록·표 보기는 이름 버튼 안에
     // 아이콘이 함께 들어있어 아이콘을 눌러도 열리지만, 아이콘 그리드 보기만 아이콘(.tf-tile-media)이
     // 이름 버튼과 분리된 별도 요소라 이름 글자 부분만 눌러야 열리는 문제가 있었음. 이름 변경 중(입력창이
     // 뜬 상태)에는 기존과 동일하게 클릭해도 아무 반응 없는 일반 div로 유지(입력 중인 값이 사라지는 걸 방지).
+    // dragProps는 그리드 아이콘 보기(SortableGridItem)에서만 넘어온다(2026-09-04 신규) — 표·트래시
+    // 타일 등 다른 호출부는 넘기지 않으므로 아래에서 옵셔널 스프레드(?.)로 안전하게 처리한다.
     const media = (
       <>
         {isFolder ? (
@@ -1650,6 +1667,8 @@ export default function App() {
             onClick={() => (isFolder ? navigateToFolder(node.id) : handleVideoClick(node))}
             title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
             aria-label={isFolder ? `"${node.name}" 열기` : `"${node.name}" 재생`}
+            {...dragProps?.attributes}
+            {...dragProps?.listeners}
           >
             {media}
           </button>
@@ -2355,12 +2374,11 @@ export default function App() {
                 {children.map((node) => {
                   const isTrash = node.id === store.trashId;
                   const isFolder = node.type === 'folder';
-                  const tileBody = renderTileBody(node, isTrash, isFolder, store);
 
                   if (isTrash) {
                     return (
                       <TrashDropZoneTile key={node.id} id={node.id}>
-                        {tileBody}
+                        {renderTileBody(node, isTrash, isFolder, store)}
                       </TrashDropZoneTile>
                     );
                   }
@@ -2376,7 +2394,7 @@ export default function App() {
                       dragHandleLabel={`"${node.name}" 드래그로 이동`}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
                     >
-                      {tileBody}
+                      {(dragProps) => renderTileBody(node, isTrash, isFolder, store, dragProps)}
                     </SortableGridItem>
                   );
                 })}
