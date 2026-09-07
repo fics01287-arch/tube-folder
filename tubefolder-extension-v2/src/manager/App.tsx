@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCenter, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
-import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  pointerWithin,
+  useDroppable,
+  useSensor,
+  useSensors
+} from '@dnd-kit/core';
+import type { CollisionDetection, DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -39,6 +49,7 @@ import AppInfo from './AppInfo';
 import Toast from './Toast';
 import MoveDialog from './MoveDialog';
 import BackupControl from './BackupControl';
+import FolderSidebar from './FolderSidebar';
 import {
   pushUndo,
   popUndo,
@@ -182,7 +193,7 @@ function SortableRow({
   coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
-  children: ReactNode;
+  children: (dragProps: DragHandleProps) => ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
   const style: React.CSSProperties = {
@@ -205,7 +216,7 @@ function SortableRow({
           ⠿
         </span>
       )}
-      {children}
+      {children({ attributes, listeners })}
     </li>
   );
 }
@@ -231,6 +242,34 @@ const VIRTUALIZE_THRESHOLD = 60;
 // 이전 폴더(뒤로가기) 버튼용 방문 기록 스택 최대 길이(2026-09-03 신규) — undoStack.ts의
 // MAX_ENTRIES(20)보다 넉넉하게 잡음(단순 폴더 이동 기록이라 undo 스냅샷보다 훨씬 가벼움).
 const MAX_FOLDER_HISTORY = 50;
+
+// 사이드바 폴더 트리(작업순서 6/8, 2026-09-04 신규)의 useDroppable id 접두어 — 지금 열려 있는
+// 폴더를 사이드바에서도 펼쳐 두면 같은 폴더 노드가 본문 타일과 사이드바 행 양쪽에 동시에 그려질 수
+// 있는데, dnd-kit은 등록 id가 겹치면 안 되므로(같은 id를 쓰는 두 요소가 서로의 등록을 덮어써 동작이
+// 불안정해짐) 사이드바 쪽 id에는 항상 이 접두어를 붙인다(FolderSidebar.tsx 참고). handleDragMove/
+// handleDragEnd는 실제 노드 id가 필요할 때 realDropTargetId()로 되돌린다.
+const SIDEBAR_DROP_PREFIX = 'sidebar:';
+function realDropTargetId(id: string): string {
+  return id.startsWith(SIDEBAR_DROP_PREFIX) ? id.slice(SIDEBAR_DROP_PREFIX.length) : id;
+}
+
+// 사이드바 드롭 대상 판정 전용 충돌 감지(작업순서 6/8 배포 후 산들 실기기 테스트에서 발견한 버그
+// 수정, 2026-09-04) — 기존 closestCenter는 "커서 위치"가 아니라 "끌고 있는 항목(아이콘을 포함한
+// 타일 전체, 세로 ~100px) 중심"을 기준으로 가장 가까운 드롭 대상을 고른다. 본문 타일끼리는 크기가
+// 서로 비슷해 문제없지만, 사이드바 행은 세로 30px로 훨씬 얇아서, 화면에서는 분명 원하는 행 위에
+// 커서가 있어도(사용자 눈에는 "아무 반응 없음"으로 보임) 실제로는 판정이 위/아래로 어긋나 엉뚱한
+// 행(심하면 바로 아래의 휴지통 행)으로 이동해버리는 일이 있었다 — 실제 좌표로 재현해 확인함. 사이드바
+// 행에 한해서만 "커서가 실제로 그 행 위에 있는가"(pointerWithin, 화면에 보이는 그대로)로 판정하고,
+// 사이드바 대상이 없을 때는 본문 영역의 기존 검증된 동작(순서변경 25%/75% 비율 계산 등)을 그대로
+// 유지하기 위해 원래 쓰던 closestCenter로 그대로 넘긴다(본문 쪽 로직은 전혀 건드리지 않음).
+const collisionDetectionStrategy: CollisionDetection = (args) => {
+  const pointerHits = pointerWithin(args);
+  const sidebarHit = pointerHits.find((hit) => String(hit.id).startsWith(SIDEBAR_DROP_PREFIX));
+  if (sidebarHit) {
+    return [sidebarHit];
+  }
+  return closestCenter(args);
+};
 
 // 그리드 타일 최소 너비 — App.css의 .tf-grid-xl/large/medium/small(minmax 하한)과 반드시 일치시켜야
 // 컨테이너 너비 기준 열 개수 계산(가상 그리드 행 묶음)이 실제 CSS 레이아웃과 어긋나지 않는다.
@@ -312,7 +351,7 @@ function SortableTableRow({
   coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
-  children: ReactNode;
+  children: (dragProps: DragHandleProps) => ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
   const style: React.CSSProperties = {
@@ -337,7 +376,7 @@ function SortableTableRow({
           </span>
         )}
       </td>
-      {children}
+      {children({ attributes, listeners })}
     </tr>
   );
 }
@@ -997,26 +1036,62 @@ export default function App() {
   // dnd-kit의 onDragOver는 대상(overId)이 바뀔 때만 발동해서(같은 대상 위에서 계속 움직여도
   // 재계산되지 않음) 존 판정을 못 함 - 포인터가 움직일 때마다 계속 발동하는 onDragMove로 대신 연결.
   function handleDragStart(event: DragStartEvent) {
-    setActiveDragId(String(event.active.id));
+    // 사이드바에서 시작한 드래그(2026-09-04 신규 — 사이드바 행끼리 서로 끌어다 놓기)는 id에
+    // SIDEBAR_DROP_PREFIX가 붙어 있으므로 실제 노드 id로 되돌려 저장한다. activeDragId는
+    // store.nodes 조회·selectedIds 비교·DragOverlay 렌더링 등 전부 접두어 없는 순수 노드 id를
+    // 전제로 하는 기존 코드가 그대로 재사용하기 때문(realDropTargetId는 접두어가 없으면 원래
+    // 값을 그대로 돌려주므로 본문 드래그에는 영향이 없다).
+    setActiveDragId(realDropTargetId(String(event.active.id)));
   }
 
   function handleDragMove(event: DragMoveEvent) {
     const { active, over } = event;
-    if (!over || active.id === over.id) {
+
+    // 사이드바 행(2026-09-04 신규, 서로 끌어다 놓기 지원)에서 시작한 드래그인지 여부 — 본문
+    // 형제 목록(sortableIds)에 속하지 않는 항목이라 "순서변경(삽입선)" 개념 자체가 의미가 없다.
+    const activeRawId = String(active.id);
+    const isSidebarSource = activeRawId.startsWith(SIDEBAR_DROP_PREFIX);
+    const activeRealId = realDropTargetId(activeRawId);
+
+    if (!over) {
       setOverId(null);
       setOverPosition(null);
       return;
     }
-    setOverId(String(over.id));
+
+    // 사이드바 폴더 트리(작업순서 6/8, 2026-09-04 신규) 행은 본문 타일과 id가 겹칠 수 있어(지금 열려
+    // 있는 폴더를 사이드바에서도 펼쳐 두면 같은 폴더가 본문·사이드바 양쪽에 동시에 그려짐) dnd-kit
+    // 등록 id가 서로 충돌하지 않도록 SIDEBAR_DROP_PREFIX를 붙여 구분한다(FolderSidebar.tsx의
+    // useDroppable(id) 참고). 여기서는 실제 노드 id로 되돌려 조회한다.
+    const overRawId = String(over.id);
+    const isSidebarDrop = overRawId.startsWith(SIDEBAR_DROP_PREFIX);
+    const overRealId = realDropTargetId(overRawId);
+
+    // 자기 자신 위(사이드바에 펼쳐진 자기 행 포함) — 본문에서는 active.id === over.id로 이미
+    // 걸러지던 경우지만, 사이드바는 id가 접두어로 달라서 별도로 한 번 더 확인해야 한다.
+    if (overRealId === activeRealId) {
+      setOverId(null);
+      setOverPosition(null);
+      return;
+    }
+
+    setOverId(overRawId);
 
     // 대상이 폴더이고(휴지통 제외) 이미 그 폴더 안이 아니면, 드래그 중인 항목의 세로 중심이
     // 대상 세로 영역 가운데 50%에 들어올 때만 "그 폴더 안으로 이동"(into)으로 판정한다.
     // 위/아래 25%씩은 기존 순서변경(삽입선)과 동일하게 처리 — 탐색기에서 아이콘 정중앙 부근에
     // 놓아야 "그 안으로 들어가는" 동작과 같은 관례를 따른 것.
-    const overNode = store?.nodes[String(over.id)];
-    const activeNode = store?.nodes[String(active.id)];
+    const overNode = store?.nodes[overRealId];
+    const activeNode = store?.nodes[activeRealId];
     const targetIsFolder = !!overNode && overNode.type === 'folder' && overNode.id !== store?.trashId;
     const alreadyInside = !!activeNode && activeNode.parentId === overNode?.id;
+
+    // 사이드바 행이 대상이거나(기존) 사이드바 행에서 시작한 드래그면(신규) "순서변경(삽입선)"
+    // 개념 자체가 의미가 없다 — 위/아래 25%씩 구분 없이 무조건 into로 판정한다.
+    if (isSidebarDrop || isSidebarSource) {
+      setOverPosition(targetIsFolder && !alreadyInside ? 'into' : null);
+      return;
+    }
 
     // 이름순/날짜순 등 자동 정렬에서는 order 필드를 sortNodes()가 무시하므로 형제 순서변경 자체가
     // 화면에 반영되지 않는다 — 그래서 이 모드에서는 "폴더 안으로 이동"만 지원하고 삽입선(순서변경)
@@ -1047,8 +1122,8 @@ export default function App() {
     // 어느 쪽에 삽입선을 그릴지는 픽셀 위치가 아니라 "지금 순서에서 활성 항목이 대상보다 뒤에 있는가"로
     // 판단한다 — 실제 드롭 결과(handleDragEnd의 arrayMove는 항상 대상 위치로 끼워 넣음)와 항상 일치시키기
     // 위함(픽셀 중심선 비교는 가상화 없는 목록에서도 드래그 중 다른 행이 함께 움직이며 어긋날 수 있었음).
-    const activeIndex = sortableIds.indexOf(String(active.id));
-    const targetIndex = sortableIds.indexOf(String(over.id));
+    const activeIndex = sortableIds.indexOf(activeRealId);
+    const targetIndex = sortableIds.indexOf(overRealId);
     setOverPosition(activeIndex > targetIndex ? 'before' : 'after');
   }
 
@@ -1058,20 +1133,24 @@ export default function App() {
     setOverPosition(null);
     setActiveDragId(null);
     const { active, over } = event;
-    if (!over || active.id === over.id || !currentFolderId) return;
+    // 사이드바 드롭(작업순서 6/8)이나 사이드바에서 시작한 드래그(2026-09-04 신규)는 id에
+    // SIDEBAR_DROP_PREFIX가 붙어 있으므로 실제 노드 id로 되돌려 아래 로직 전체(휴지통 판정·
+    // moveNode 대상·순서변경 인덱스 조회)에 그대로 재사용한다.
+    const overRealId = over ? realDropTargetId(String(over.id)) : null;
+    const activeId = realDropTargetId(String(active.id));
+    if (!over || overRealId === null || overRealId === activeId || !currentFolderId) return;
 
     // 드래그를 시작한 항목이 "이미 선택돼 있던 다중 선택"의 일부이면, 그 선택 전체를 함께
     // 옮긴다(탐색기에서 여러 개 선택 후 하나를 끌면 전부 같이 움직이는 것과 동일한 관례).
     // 단일 항목만 선택돼 있었거나 선택 밖의 항목을 끈 경우는 그 항목 하나만 대상.
-    const activeId = String(active.id);
     const idsToMove =
       selectedIds.has(activeId) && selectedIds.size > 1 ? Array.from(selectedIds) : [activeId];
 
-    // 휴지통 타일 위로 드롭 — 선택(또는 단일 드래그 항목) 중 폴더만 골라 일괄 휴지통 이동으로 처리한다.
-    // trashFolder()는 폴더 전용이라 영상은 대상에서 제외(개별 영상 삭제는 아직 범위 밖 — 기존
-    // handleBulkTrash의 selectedFolderIds 필터링과 같은 원칙). 폴더가 하나도 없으면(영상만 드래그)
-    // 조용히 무시한다.
-    if (over.id === store?.trashId) {
+    // 휴지통 타일(또는 사이드바의 휴지통 행) 위로 드롭 — 선택(또는 단일 드래그 항목) 중 폴더만 골라
+    // 일괄 휴지통 이동으로 처리한다. trashFolder()는 폴더 전용이라 영상은 대상에서 제외(개별 영상
+    // 삭제는 아직 범위 밖 — 기존 handleBulkTrash의 selectedFolderIds 필터링과 같은 원칙). 폴더가
+    // 하나도 없으면(영상만 드래그) 조용히 무시한다.
+    if (overRealId === store?.trashId) {
       const idsToTrash = idsToMove.filter((id) => store?.nodes[id]?.type === 'folder');
       if (idsToTrash.length === 0) return;
       setError(null);
@@ -1099,7 +1178,7 @@ export default function App() {
     // 자기 하위 폴더로 옮기려는 시도 등 유효하지 않은 이동은 moveNode 자체가 거부하며,
     // 그 경우 항목은 원래 자리에 그대로 남고(내용 변경 없음) 에러 배너로 사유를 안내한다.
     if (dropPosition === 'into') {
-      const destFolderId = String(over.id);
+      const destFolderId = overRealId;
       const ids = idsToMove.filter((id) => id !== destFolderId);
       if (ids.length === 0) return;
       setError(null);
@@ -1128,8 +1207,8 @@ export default function App() {
     // 항목 하나만 슬쩍 순서를 바꿔도 된다는 뜻이 아니다. 아무 것도 하지 않는다).
     if (!isManualSort || activeDragIds.length > 1) return;
 
-    const oldIndex = sortableIds.indexOf(String(active.id));
-    const newIndex = sortableIds.indexOf(String(over.id));
+    const oldIndex = sortableIds.indexOf(activeId);
+    const newIndex = sortableIds.indexOf(overRealId);
     if (oldIndex === -1 || newIndex === -1) return;
     setError(null);
     try {
@@ -1476,7 +1555,13 @@ export default function App() {
   // 가상화 여부와 무관하게 항상 같아서(li/div) 그대로 재사용하고, 표는 가상화 시 <table>이 아니라
   // CSS grid div로 바뀌므로(가상 스크롤이 <tr>에 position:absolute를 주면 표 레이아웃 계산이
   // 깨지는 브라우저 제약 때문) 셀 "내용"만 반환하는 tableCells()로 따로 분리했다.
-  function renderRowBody(node: TubeNode, isTrash: boolean, isFolder: boolean, store: TubeStoreData): ReactNode {
+  function renderRowBody(
+    node: TubeNode,
+    isTrash: boolean,
+    isFolder: boolean,
+    store: TubeStoreData,
+    dragProps?: DragHandleProps
+  ): ReactNode {
     return (
       <>
         {!isTrash && (
@@ -1515,7 +1600,13 @@ export default function App() {
               </button>
             </span>
           ) : (
-            <button className="tf-row-name" onClick={() => navigateToFolder(node.id)} title="열기">
+            <button
+              className="tf-row-name"
+              onClick={() => navigateToFolder(node.id)}
+              title="열기"
+              {...dragProps?.attributes}
+              {...dragProps?.listeners}
+            >
               {folderIcon(node, store)} {node.name}
             </button>
           )
@@ -1524,6 +1615,8 @@ export default function App() {
             className="tf-row-name tf-row-name-video"
             onClick={() => handleVideoClick(node)}
             title={isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
+            {...dragProps?.attributes}
+            {...dragProps?.listeners}
           >
             🎬 {node.name}
           </button>
@@ -1795,7 +1888,8 @@ export default function App() {
     node: TubeNode,
     isTrash: boolean,
     isFolder: boolean,
-    store: TubeStoreData
+    store: TubeStoreData,
+    dragProps?: DragHandleProps
   ): { name: ReactNode; date: ReactNode; type: ReactNode; size: ReactNode; actions: ReactNode } {
     const name = (
       <>
@@ -1838,6 +1932,8 @@ export default function App() {
           className="tf-row-name"
           onClick={() => (isFolder ? navigateToFolder(node.id) : handleVideoClick(node))}
           title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
+          {...dragProps?.attributes}
+          {...dragProps?.listeners}
         >
           {isFolder ? folderIcon(node, store) : '🎬'} {node.name}
         </button>
@@ -2246,8 +2342,23 @@ export default function App() {
         </div>
       )}
 
-      {useVirtual ? (
-        <div className="tf-scroll-area" ref={scrollParentRef} onContextMenu={(e) => openContextMenu(e, null)}>
+      <DndContext
+        sensors={dragSensors}
+        collisionDetection={collisionDetectionStrategy}
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => {
+          setOverId(null);
+          setOverPosition(null);
+          setActiveDragId(null);
+        }}
+      >
+        <div className="tf-layout">
+          <FolderSidebar store={store} currentFolderId={currentFolderId} onNavigate={navigateToFolder} />
+          <div className="tf-main-panel">
+            {useVirtual ? (
+              <div className="tf-scroll-area" ref={scrollParentRef} onContextMenu={(e) => openContextMenu(e, null)}>
           {isGrid ? (
             <div
               ref={gridContainerRef}
@@ -2354,20 +2465,8 @@ export default function App() {
             </ul>
           )}
         </div>
-      ) : (
-        <DndContext
-          sensors={dragSensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragMove={handleDragMove}
-          onDragEnd={handleDragEnd}
-          onDragCancel={() => {
-            setOverId(null);
-            setOverPosition(null);
-            setActiveDragId(null);
-          }}
-        >
-          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+            ) : (
+              <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
             {isGrid ? (
               <div className={`tf-grid tf-grid-${store.settings.view}`} onContextMenu={(e) => openContextMenu(e, null)}>
                 {children.length === 0 && <p className="tf-empty">비어 있습니다.</p>}
@@ -2435,21 +2534,16 @@ export default function App() {
                   {children.map((node) => {
                     const isTrash = node.id === store.trashId;
                     const isFolder = node.type === 'folder';
-                    const c = tableCells(node, isTrash, isFolder, store);
-                    const cells = (
-                      <>
-                        <td className="tf-tcell-name">{c.name}</td>
-                        <td className="tf-tcell-date">{c.date}</td>
-                        <td className="tf-tcell-type">{c.type}</td>
-                        <td className="tf-tcell-size">{c.size}</td>
-                        <td className="tf-tcell-actions">{c.actions}</td>
-                      </>
-                    );
 
                     if (isTrash) {
+                      const c = tableCells(node, isTrash, isFolder, store);
                       return (
                         <TrashDropZoneRow key={node.id} id={node.id}>
-                          {cells}
+                          <td className="tf-tcell-name">{c.name}</td>
+                          <td className="tf-tcell-date">{c.date}</td>
+                          <td className="tf-tcell-type">{c.type}</td>
+                          <td className="tf-tcell-size">{c.size}</td>
+                          <td className="tf-tcell-actions">{c.actions}</td>
                         </TrashDropZoneRow>
                       );
                     }
@@ -2465,7 +2559,18 @@ export default function App() {
                         dragHandleLabel={`"${node.name}" 드래그로 이동`}
                         onContextMenu={(e) => openContextMenu(e, node.id)}
                       >
-                        {cells}
+                        {(dragProps) => {
+                          const c = tableCells(node, isTrash, isFolder, store, dragProps);
+                          return (
+                            <>
+                              <td className="tf-tcell-name">{c.name}</td>
+                              <td className="tf-tcell-date">{c.date}</td>
+                              <td className="tf-tcell-type">{c.type}</td>
+                              <td className="tf-tcell-size">{c.size}</td>
+                              <td className="tf-tcell-actions">{c.actions}</td>
+                            </>
+                          );
+                        }}
                       </SortableTableRow>
                     );
                   })}
@@ -2477,12 +2582,11 @@ export default function App() {
                 {children.map((node) => {
                   const isTrash = node.id === store.trashId;
                   const isFolder = node.type === 'folder';
-                  const rowBody = renderRowBody(node, isTrash, isFolder, store);
 
                   if (isTrash) {
                     return (
                       <TrashDropZoneListItem key={node.id} id={node.id}>
-                        {rowBody}
+                        {renderRowBody(node, isTrash, isFolder, store)}
                       </TrashDropZoneListItem>
                     );
                   }
@@ -2498,31 +2602,33 @@ export default function App() {
                       dragHandleLabel={`"${node.name}" 드래그로 이동`}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
                     >
-                      {rowBody}
+                      {(dragProps) => renderRowBody(node, isTrash, isFolder, store, dragProps)}
                     </SortableRow>
                   );
                 })}
               </ul>
             )}
-          </SortableContext>
-          {/* 여러 개를 선택한 채 드래그하면 실제로 커서를 따라 움직이는 dnd-kit 요소는 하나뿐이라
-              "한 개만 옮기는 것처럼 보인다"는 피드백이 있었음(2026-09-03) — 나머지 선택 항목은
-              coDragging으로 흐리게 표시하고, 여기서는 "N개 항목" 배지를 커서 옆에 띄워 다같이
-              옮겨지고 있음을 알려준다. 단일 항목 드래그는 기존처럼 항목 자체가 커서를 따라가는
-              것으로 충분해 배지를 띄우지 않는다. */}
-          <DragOverlay>
-            {activeDragId && activeDragIds.length > 1 && store?.nodes[activeDragId] ? (
-              <div className="tf-drag-overlay-chip">
-                <span className="tf-drag-overlay-icon">
-                  {store.nodes[activeDragId].type === 'folder' ? folderIcon(store.nodes[activeDragId], store) : '🎬'}
-                </span>
-                <span className="tf-drag-overlay-name">{store.nodes[activeDragId].name}</span>
-                <span className="tf-drag-count-badge">{activeDragIds.length}</span>
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      )}
+              </SortableContext>
+            )}
+          </div>
+        </div>
+        {/* 여러 개를 선택한 채 드래그하면 실제로 커서를 따라 움직이는 dnd-kit 요소는 하나뿐이라
+            "한 개만 옮기는 것처럼 보인다"는 피드백이 있었음(2026-09-03) — 나머지 선택 항목은
+            coDragging으로 흐리게 표시하고, 여기서는 "N개 항목" 배지를 커서 옆에 띄워 다같이
+            옮겨지고 있음을 알려준다. 단일 항목 드래그는 기존처럼 항목 자체가 커서를 따라가는
+            것으로 충분해 배지를 띄우지 않는다. */}
+        <DragOverlay>
+          {activeDragId && activeDragIds.length > 1 && store?.nodes[activeDragId] ? (
+            <div className="tf-drag-overlay-chip">
+              <span className="tf-drag-overlay-icon">
+                {store.nodes[activeDragId].type === 'folder' ? folderIcon(store.nodes[activeDragId], store) : '🎬'}
+              </span>
+              <span className="tf-drag-overlay-name">{store.nodes[activeDragId].name}</span>
+              <span className="tf-drag-count-badge">{activeDragIds.length}</span>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       {contextMenu && (
         <div

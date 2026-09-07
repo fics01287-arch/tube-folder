@@ -1042,3 +1042,119 @@ select:focus-visible {
   margin: 4px 2px;
   background: #333;
 }
+
+/* 사이드바 폴더 트리 레이아웃 — ROADMAP 4단계 작업순서 6/8. 기본(휴대폰 PWA 포함 좁은 화면)은
+   지금까지와 동일하게 사이드바 없이 단일 컬럼(.tf-app의 max-width: 720px)을 유지하고, 화면이
+   넉넉한 데스크톱(확장 매니저 탭)에서만 폭을 넓혀 사이드바를 상시 표시한다(FolderSidebar.tsx
+   상단 주석 참고). 드롭 대상 하이라이트는 기존 .tf-row-drop-into를 그대로 재사용(신규 클래스 불필요). */
+.tf-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.tf-main-panel {
+  flex: 1 1 auto;
+  min-width: 0; /* flex item 기본값(auto)은 내용보다 안 줄어들어서, 안의 그리드/표가 넘칠 때 레이아웃이 깨짐 */
+}
+
+.tf-sidebar {
+  display: none; /* 좁은 화면(휴대폰 PWA)에서는 숨김 — 아래 @media에서 넓은 화면일 때만 표시 */
+}
+
+@media (min-width: 860px) {
+  .tf-app {
+    max-width: 1100px;
+  }
+
+  .tf-sidebar {
+    display: block;
+    flex: 0 0 220px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    position: sticky;
+    top: 24px;
+    padding: 8px 4px;
+    border-right: 1px solid #2a2a2a;
+  }
+}
+
+.tf-sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  border-radius: 6px;
+  user-select: none;
+  touch-action: none; /* dnd-kit PointerSensor가 터치에서 스크롤과 드래그를 구분하는 데 필요(다른
+                          드래그 가능 요소들과 동일 — App.css .tf-drag-handle 참고) */
+}
+
+.tf-sidebar-row:hover {
+  background: #1f1f1f;
+}
+
+.tf-sidebar-row-active {
+  background: #23334a;
+  color: #6cb8ff;
+}
+
+.tf-sidebar-toggle {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #888;
+  font-size: 9px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.tf-sidebar-toggle-open {
+  transform: rotate(90deg);
+}
+
+.tf-sidebar-toggle-spacer {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+/* 아이콘+이름을 감싸는 버튼(클릭=열기, 누른 채 끌기=이동) — 본문 그리드의 .tf-tile-media-btn과
+   같은 이유로 버튼 기본 스타일만 지우고 레이아웃은 기존 .tf-sidebar-row 내부 배치 그대로 유지. */
+.tf-sidebar-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tf-sidebar-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tf-sidebar-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
