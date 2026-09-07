@@ -91,6 +91,32 @@ function folderIcon(node: TubeNode, store: TubeStoreData): string {
   return (node.type === 'folder' && node.icon) || DEFAULT_FOLDER_ICON;
 }
 
+// ── 검색(ROADMAP 4단계 "검색", 작업순서 7/8) 헬퍼 ────────────────────────────────────
+// 휴지통 안(휴지통 자신 포함)은 검색 대상에서 제외한다 — 탐색기 검색이 기본적으로 휴지통까지
+// 뒤지지는 않는 것과 같은 관례(다중 선택·클립보드 등 이 코드베이스의 기존 기능들도 대부분 휴지통을
+// 별도 취급). 노드에서 부모를 따라 올라가며 휴지통 id를 만나는지만 확인하면 되므로 트리 깊이만큼만
+// 순회해 무제한 중첩에서도 가볍다.
+function isUnderTrash(store: TubeStoreData, node: TubeNode): boolean {
+  let cur: TubeNode | undefined = node;
+  while (cur) {
+    if (cur.id === store.trashId) return true;
+    cur = cur.parentId ? store.nodes[cur.parentId] : undefined;
+  }
+  return false;
+}
+
+// 검색 결과 목록에 "어디에 있는지" 보여줄 경로 문자열(자기 이름은 제외, 부모 체인만) — App() 안의
+// breadcrumb useMemo와 같은 조상 순회 로직을 임의의 노드에 대해 쓸 수 있게 일반화한 버전.
+function nodePathLabel(store: TubeStoreData, node: TubeNode): string {
+  const names: string[] = [];
+  let cur: TubeNode | undefined = node.parentId ? store.nodes[node.parentId] : undefined;
+  while (cur) {
+    names.unshift(cur.name);
+    cur = cur.parentId ? store.nodes[cur.parentId] : undefined;
+  }
+  return names.join(' / ');
+}
+
 // ── 표(자세히) 보기(ROADMAP 4단계 "아이콘 그리드 4종·표 보기") 열 데이터 헬퍼들 ─────────
 // 탐색기의 "유형" 열과 동일한 역할 — 휴지통은 시스템 폴더로 구분 표시.
 function nodeTypeLabel(node: TubeNode, store: TubeStoreData): string {
@@ -428,6 +454,15 @@ export default function App() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playlistUrl, setPlaylistUrl] = useState('');
+  // 검색(ROADMAP 4단계 "검색", 작업순서 7/8, 2026-09-07 산들 착수 승인) — 폴더/영상 이름 기준
+  // 전체 트리 검색. searchFocused는 입력창에 포커스가 있을 때만 결과 드롭다운을 보여주기 위한
+  // 것으로, 저장소에는 전혀 반영되지 않는 순수 UI 상태(사이드바 expanded 등과 같은 성격).
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  // "휴지통도 검색" 체크박스(2026-09-07, 산들 지시 — 기본은 기존과 동일하게 휴지통 제외, 체크하면
+  // 포함). 결과의 경로 표시(nodePathLabel)가 이미 "튜브폴더 / 휴지통 / ..." 형태로 조상 경로를
+  // 그대로 보여주므로, 휴지통 안 항목이 섞여도 결과 목록만 보고 바로 구분할 수 있다.
+  const [searchIncludeTrash, setSearchIncludeTrash] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [playingVideo, setPlayingVideo] = useState<VideoNode | null>(null);
@@ -516,6 +551,15 @@ export default function App() {
     const parentId = currentFolderId ? store?.nodes[currentFolderId]?.parentId : null;
     if (!parentId) return;
     navigateToFolder(parentId);
+  }
+
+  // 검색 결과 클릭 — 폴더면 그 폴더로, 영상이면 그 영상이 들어있는 폴더로 이동한다(검색 자체에서
+  // 바로 재생하지는 않음, "결과 클릭 시 해당 폴더로 이동"이라는 요구사항 그대로). navigateToFolder를
+  // 거치므로 방문 기록(◀ 이전 폴더)에도 정상적으로 쌓인다.
+  function handleSearchResultClick(node: TubeNode) {
+    const targetFolderId = node.type === 'folder' ? node.id : node.parentId;
+    if (targetFolderId) navigateToFolder(targetFolderId);
+    setSearchQuery('');
   }
 
   const refresh = useCallback(async (keepFolderId?: string | null) => {
@@ -658,6 +702,25 @@ export default function App() {
     }
     return chain;
   }, [store, currentFolderId]);
+
+  // 검색 결과(작업순서 7/8) — 정규화된 노드 맵을 한 번 훑는 것으로 "전체 트리 재귀 탐색"과 같은
+  // 효과를 낸다(트리 형태는 부모 링크로만 존재하고 실제 저장은 평평한 맵이라 재귀 순회가 필요 없음).
+  // 결과가 너무 많으면 드롭다운이 비대해지므로 이름순 정렬 후 50개로 제한.
+  const searchResults = useMemo(() => {
+    if (!store) return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const matches: TubeNode[] = [];
+    for (const id in store.nodes) {
+      const n = store.nodes[id];
+      if (n.id === store.rootId) continue; // 루트 자신은 항상 갈 수 있는 곳이라 검색 의미 없음
+      if (!n.name.toLowerCase().includes(q)) continue;
+      if (!searchIncludeTrash && isUnderTrash(store, n)) continue;
+      matches.push(n);
+    }
+    matches.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    return matches.slice(0, 50);
+  }, [store, searchQuery, searchIncludeTrash]);
 
   // 다중 선택 토글 — 체크박스 클릭(shiftKey=false)은 그 항목 하나만 추가/해제, Shift+클릭은
   // 마지막으로 클릭한 항목(selectAnchorId)부터 지금 클릭한 항목까지 현재 폴더 목록(children) 순서
@@ -2076,6 +2139,81 @@ export default function App() {
           </span>
         ))}
       </nav>
+
+      {/* 검색(작업순서 7/8) — 사이드바는 좁은 화면(휴대폰 PWA)에서 숨겨지므로, 화면 크기와
+          무관하게 항상 쓸 수 있도록 사이드바가 아니라 상단 네비게이션 공용 영역(breadcrumb 바로
+          아래)에 둔다. 지금 보고 있는 폴더와 무관한 전역 검색이라 휴지통을 보고 있을 때도 그대로
+          노출한다. */}
+      <div className="tf-search">
+        <input
+          className="tf-input tf-search-input"
+          type="text"
+          aria-label="폴더/영상 검색"
+          placeholder="🔍 폴더·영상 이름으로 검색"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setSearchQuery('');
+              (e.target as HTMLInputElement).blur();
+            } else if (e.key === 'Enter' && searchResults.length > 0) {
+              handleSearchResultClick(searchResults[0]);
+            }
+          }}
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            className="tf-search-clear"
+            aria-label="검색어 지우기"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setSearchQuery('')}
+          >
+            ✕
+          </button>
+        )}
+        {/* "휴지통도 검색"(2026-09-07, 산들 지시) — 기본은 기존과 동일하게 휴지통 제외, 체크하면
+            포함. onMouseDown에서 preventDefault()로 검색 입력창의 blur를 막아, 체크박스를 눌러도
+            결과 드롭다운이 닫히지 않고(searchFocused 유지) 바뀐 결과를 그 자리에서 바로 보여준다
+            (검색 결과 버튼과 같은 이유·같은 방식). */}
+        <label className="tf-checkbox-row tf-search-trash-toggle">
+          <input
+            type="checkbox"
+            checked={searchIncludeTrash}
+            onMouseDown={(e) => e.preventDefault()}
+            onChange={(e) => setSearchIncludeTrash(e.target.checked)}
+          />
+          휴지통도 검색
+        </label>
+        {searchFocused && searchQuery.trim() && (
+          <div className="tf-search-results" role="listbox" aria-label="검색 결과">
+            {searchResults.length === 0 ? (
+              <div className="tf-search-empty">검색 결과가 없습니다.</div>
+            ) : (
+              searchResults.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  className="tf-search-result"
+                  role="option"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleSearchResultClick(n)}
+                >
+                  <span className="tf-search-result-icon" aria-hidden="true">
+                    {n.type === 'folder' ? folderIcon(n, store) : '🎬'}
+                  </span>
+                  <span className="tf-search-result-main">
+                    <span className="tf-search-result-name">{n.name}</span>
+                    <span className="tf-search-result-path">{nodePathLabel(store, n) || ' '}</span>
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {currentFolder.id === store.trashId ? (
         <div className="tf-trash-policy-banner">
