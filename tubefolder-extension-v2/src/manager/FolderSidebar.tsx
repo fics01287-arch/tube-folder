@@ -49,6 +49,24 @@ function sidebarFolderIcon(node: TubeNode, store: TubeStoreData): string {
   return (node.type === 'folder' && node.icon) || DEFAULT_FOLDER_ICON;
 }
 
+// App.tsx의 folderContentCounts와 완전히 같은 로직 — 위 sidebarFolderIcon과 같은 이유로
+// 이 파일에 그대로 복사해 둔다(마우스를 올렸을 때 "폴더 몇 개·영상 몇 개"를 보여주는 용도,
+// 2026-09-08 신설, 산들 요청). 직계 자식만 센다(재귀 집계 안 함 — App.tsx 쪽 주석 참고).
+function folderContentCountsLabel(store: TubeStoreData, folderId: string): string {
+  let folders = 0;
+  let videos = 0;
+  for (const k in store.nodes) {
+    const n = store.nodes[k];
+    if (n.parentId !== folderId) continue;
+    if (n.type === 'folder') {
+      if (n.id !== store.trashId) folders++;
+    } else {
+      videos++;
+    }
+  }
+  return `폴더 ${folders}개 · 영상 ${videos}개`;
+}
+
 function folderChildren(store: TubeStoreData, parentId: string): FolderNode[] {
   const result: FolderNode[] = [];
   for (const k in store.nodes) {
@@ -154,6 +172,7 @@ function SidebarRow({
           className="tf-sidebar-label"
           onClick={() => onNavigate(node.id)}
           aria-label={`"${node.name}" 열기`}
+          title={isTrash ? undefined : `열기 · ${folderContentCountsLabel(store, node.id)}`}
           {...attributes}
           {...listeners}
         >

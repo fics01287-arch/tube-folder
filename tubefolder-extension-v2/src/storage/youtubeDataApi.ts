@@ -219,5 +219,12 @@ export async function fetchPlaylistViaDataApi(
     duration: durationById.get(v.videoId) ?? 0
   }));
 
-  return { title, videos };
+  // playlistImport.ts(기존 스크래핑 경로)의 PlaylistFetchResult.debug와 형식만 맞춘 것 — 공식
+  // API는 페이지 이어받기 실패 같은 진단 정보 자체가 필요 없어(문서화된 API라 이어받기가 항상
+  // 보장됨) 스크래핑 경로만큼 자세하지는 않지만, 결과 화면에서 두 경로가 같은 타입을 공유하므로
+  // 최소한 "공식 API로 몇 개 가져왔는지"는 남겨둔다.
+  const debug: string[] = [`공식 API: ${videos.length}개 수집`];
+  if (skippedUnavailable > 0) debug.push(`삭제됨/비공개 ${skippedUnavailable}개 건너뜀`);
+
+  return { title, videos, debug };
 }

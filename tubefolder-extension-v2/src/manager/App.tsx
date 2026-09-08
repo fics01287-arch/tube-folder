@@ -156,6 +156,31 @@ function nodeSizeLabel(node: TubeNode, store: TubeStoreData): string {
   return value > 0 ? `${value}개 항목` : '-';
 }
 
+// 폴더에 마우스를 올리거나 열었을 때 "그 안에 폴더 몇 개·영상 몇 개가 있는지" 바로 보여주기 위한
+// 헬퍼(2026-09-08 신설, 산들 요청). 위 nodeSizeSortValue와 같은 이유로 재귀 집계는 하지 않고
+// 직계 자식만 센다(하위 폴더 안의 영상까지 다 더하면 폴더가 깊어질수록 계산량이 커지고, 탐색기도
+// 폴더 속성을 열기 전까지는 재귀 크기를 미리 계산해두지 않는 것과 같은 절충). 휴지통은 시스템
+// 폴더라 "폴더 개수"에 포함하지 않는다(사용자가 직접 만든 폴더만 셈).
+function folderContentCounts(store: TubeStoreData, folderId: string): { folders: number; videos: number } {
+  let folders = 0;
+  let videos = 0;
+  for (const k in store.nodes) {
+    const n = store.nodes[k];
+    if (n.parentId !== folderId) continue;
+    if (n.type === 'folder') {
+      if (n.id !== store.trashId) folders++;
+    } else {
+      videos++;
+    }
+  }
+  return { folders, videos };
+}
+
+function folderContentCountsLabel(store: TubeStoreData, folderId: string): string {
+  const { folders, videos } = folderContentCounts(store, folderId);
+  return `폴더 ${folders}개 · 영상 ${videos}개`;
+}
+
 // 정렬 기준별 1차 비교값(방향·이름 보조정렬은 sortNodes에서 처리) — 이름순은 기존 로캘 자연정렬 그대로.
 function compareByKey(a: TubeNode, b: TubeNode, sortKey: Settings['sortKey'], store: TubeStoreData): number {
   switch (sortKey) {
@@ -1666,7 +1691,7 @@ export default function App() {
             <button
               className="tf-row-name"
               onClick={() => navigateToFolder(node.id)}
-              title="열기"
+              title={`열기 · ${folderContentCountsLabel(store, node.id)}`}
               {...dragProps?.attributes}
               {...dragProps?.listeners}
             >
@@ -1821,7 +1846,13 @@ export default function App() {
           <button
             className="tf-tile-media tf-tile-media-btn"
             onClick={() => (isFolder ? navigateToFolder(node.id) : handleVideoClick(node))}
-            title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
+            title={
+              isFolder
+                ? `열기 · ${folderContentCountsLabel(store, node.id)}`
+                : isVideo(node) && node.videoId
+                  ? '재생'
+                  : '재생할 수 없는 영상(videoId 없음)'
+            }
             aria-label={isFolder ? `"${node.name}" 열기` : `"${node.name}" 재생`}
             {...dragProps?.attributes}
             {...dragProps?.listeners}
@@ -1856,7 +1887,13 @@ export default function App() {
           <button
             className="tf-tile-name"
             onClick={() => (isFolder ? navigateToFolder(node.id) : handleVideoClick(node))}
-            title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
+            title={
+              isFolder
+                ? `열기 · ${folderContentCountsLabel(store, node.id)}`
+                : isVideo(node) && node.videoId
+                  ? '재생'
+                  : '재생할 수 없는 영상(videoId 없음)'
+            }
           >
             {node.name}
           </button>
@@ -1994,7 +2031,13 @@ export default function App() {
         <button
           className="tf-row-name"
           onClick={() => (isFolder ? navigateToFolder(node.id) : handleVideoClick(node))}
-          title={isFolder ? '열기' : isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
+          title={
+            isFolder
+              ? `열기 · ${folderContentCountsLabel(store, node.id)}`
+              : isVideo(node) && node.videoId
+                ? '재생'
+                : '재생할 수 없는 영상(videoId 없음)'
+          }
           {...dragProps?.attributes}
           {...dragProps?.listeners}
         >
@@ -2139,6 +2182,11 @@ export default function App() {
           </span>
         ))}
       </nav>
+
+      {/* 지금 열려 있는 폴더 안에 뭐가 몇 개 있는지(2026-09-08 신설, 산들 요청) — 사이드바·목록/표/
+          그리드 행의 마우스오버 툴팁과 같은 숫자를 "폴더를 열어서 들어왔을 때"도 바로 보여준다(위
+          folderContentCounts 참고, 직계 자식만 집계). */}
+      {store && currentFolderId && <p className="tf-folder-summary">{folderContentCountsLabel(store, currentFolderId)}</p>}
 
       {/* 검색(작업순서 7/8) — 사이드바는 좁은 화면(휴대폰 PWA)에서 숨겨지므로, 화면 크기와
           무관하게 항상 쓸 수 있도록 사이드바가 아니라 상단 네비게이션 공용 영역(breadcrumb 바로
