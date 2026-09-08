@@ -36,12 +36,16 @@ export const youtubeUrl = {
   watch: (videoId: string): string => `${YT_ORIGIN}/watch?v=${encodeURIComponent(videoId)}`,
   /** 매니저 내장 재생용 embed URL(enablejsapi=1: postMessage 프로토콜, start: 이어보기 시작 위치).
    * origin 파라미터: 유튜브 공식 IFrame API(iframe_api 스크립트)는 항상 window.location.origin을
-   * 여기 실어 보내 postMessage 통신을 검증하는데, 확장 페이지의 실제 origin(chrome-extension://...)은
-   * 유튜브가 유효한 웹 origin으로 인정하지 않는다. background.ts의 declarativeNetRequest 규칙
-   * (public/rules.json)이 이 요청의 Referer·Origin 헤더를 YT_ORIGIN으로 강제 설정해두므로, embed URL의
-   * origin 파라미터도 동일하게 YT_ORIGIN으로 맞춰 세 값(Referer 헤더·Origin 헤더·origin 파라미터)이
-   * 서로 어긋나지 않게 한다(2026-09-08, "오류 152-4" 원인 분석 반영 — 이 세 값이 불일치하면 유튜브가
-   * 임베드 컨텍스트 검증에 실패해 재생을 거부하는 것으로 추정됨). */
+   * 여기 실어 보내는데, 확장 페이지의 실제 origin(chrome-extension://...)은 유튜브가 유효한 웹 origin으로
+   * 인정하지 않는다. background.ts의 declarativeNetRequest 규칙(public/rules.json)이 이 요청의 Referer
+   * 헤더만 YT_ORIGIN으로 강제 설정해두므로, embed URL의 origin 파라미터도 동일하게 YT_ORIGIN으로 맞춰뒀다
+   * (2026-09-08).
+   *
+   * (2026-09-08, "오류 152-4" 진단 — enablejsapi=1 제거 실험 결과 기록) Referer+origin 파라미터를 맞춰도
+   * 152-4가 재현되어, enablejsapi=1(postMessage 핸드셰이크)이 원인인지 확인하려고 잠시 빼고 테스트했으나
+   * 동일하게 152-4가 재현됨 — postMessage/enablejsapi는 원인이 아닌 것으로 확인되어 원래대로 복원함.
+   * 다음 조사 방향은 "영상 자체의 임베드 제한 여부"(별도 사이트에서 같은 영상을 임베드해도 동일 오류가
+   * 나는지) 확인. */
   embed: (videoId: string, startSeconds: number): string =>
     `${YT_ORIGIN}/embed/${videoId}?enablejsapi=1&autoplay=1&start=${startSeconds}&origin=${encodeURIComponent(YT_ORIGIN)}`,
   /** 단건 추가 시 제목/채널 조회(oEmbed) */
