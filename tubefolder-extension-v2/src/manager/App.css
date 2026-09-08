@@ -961,11 +961,42 @@ select:focus-visible {
 .tf-tcell-size {
   color: #aaa;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .tf-tcell-actions {
   white-space: nowrap;
   text-align: right;
+}
+
+/* 항목이 많아 가상 스크롤(react-virtual)이 켜진 폴더의 표(자세히) 보기 전용 렌더 경로
+   (tf-vtable*, VIRTUALIZE_THRESHOLD 초과 시) — 위 .tf-table(실제 <table>)과 달리 행마다
+   절대 위치로 개별 렌더되는 div라 표 자동 정렬을 못 받아, 지금까지 열 정렬 CSS가 아예
+   빠져있었다(발견: 2026-09-08, 산들이 "영상의 이동 아이콘이 제목과 떨어져 혼자 떠 있어
+   폴더 아이콘처럼 보인다"고 스크린샷으로 지적 — 실은 행 전체가 열 정렬 없이 세로로 쌓여서
+   보이던 것이었음). 헤더·행이 서로 다른 DOM(행은 각각 독립적으로 절대 위치)이라 폭을
+   auto/max-content로 두면 행마다 내용에 따라 제각각 계산돼 안 맞으므로, 반드시 고정폭(또는
+   fr)만 쓴다 — 위 .tf-table의 실제 사용 폭(이름 가변·나머지 고정)과 맞춰 두 표 보기가
+   시각적으로 같아 보이게 했다. */
+.tf-vtable-header,
+.tf-vtable-row {
+  display: grid;
+  grid-template-columns: 24px minmax(140px, 1fr) 150px 150px 100px 70px 150px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.tf-vtable-header {
+  color: #999;
+  font-size: 12px;
+  border-bottom: 1px solid #3f3f3f;
+}
+
+.tf-vtable-row {
+  border-bottom: 1px solid #262626;
 }
 
 /* 삽입선 — 목록 보기와 같은 box-shadow 방식(<tr>에도 동일하게 적용됨) */

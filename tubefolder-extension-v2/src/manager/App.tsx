@@ -1834,7 +1834,7 @@ export default function App() {
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
-              📁
+              ➡️
             </button>
           </span>
         )}
@@ -2024,7 +2024,7 @@ export default function App() {
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
-              📁
+              ➡️
             </button>
           </span>
         )}
@@ -2171,7 +2171,7 @@ export default function App() {
               title="다른 폴더로 이동"
               aria-label={`"${node.name}" 다른 폴더로 이동`}
             >
-              📁
+              ➡️
             </button>
           </span>
         )}
