@@ -34,9 +34,16 @@ export const youtubeUrl = {
     `${YT_ORIGIN}/youtubei/v1/browse?key=${encodeURIComponent(apiKey)}`,
   /** 시청 페이지 — 재생시간(videoDetails.lengthSeconds) 스크래핑 및 영상 URL 조립에 사용 */
   watch: (videoId: string): string => `${YT_ORIGIN}/watch?v=${encodeURIComponent(videoId)}`,
-  /** 매니저 내장 재생용 embed URL(enablejsapi=1: postMessage 프로토콜, start: 이어보기 시작 위치) */
+  /** 매니저 내장 재생용 embed URL(enablejsapi=1: postMessage 프로토콜, start: 이어보기 시작 위치).
+   * origin 파라미터: 유튜브 공식 IFrame API(iframe_api 스크립트)는 항상 window.location.origin을
+   * 여기 실어 보내 postMessage 통신을 검증하는데, 확장 페이지의 실제 origin(chrome-extension://...)은
+   * 유튜브가 유효한 웹 origin으로 인정하지 않는다. background.ts의 declarativeNetRequest 규칙
+   * (public/rules.json)이 이 요청의 Referer·Origin 헤더를 YT_ORIGIN으로 강제 설정해두므로, embed URL의
+   * origin 파라미터도 동일하게 YT_ORIGIN으로 맞춰 세 값(Referer 헤더·Origin 헤더·origin 파라미터)이
+   * 서로 어긋나지 않게 한다(2026-09-08, "오류 152-4" 원인 분석 반영 — 이 세 값이 불일치하면 유튜브가
+   * 임베드 컨텍스트 검증에 실패해 재생을 거부하는 것으로 추정됨). */
   embed: (videoId: string, startSeconds: number): string =>
-    `${YT_ORIGIN}/embed/${videoId}?enablejsapi=1&autoplay=1&start=${startSeconds}`,
+    `${YT_ORIGIN}/embed/${videoId}?enablejsapi=1&autoplay=1&start=${startSeconds}&origin=${encodeURIComponent(YT_ORIGIN)}`,
   /** 단건 추가 시 제목/채널 조회(oEmbed) */
   oembed: (watchUrl: string): string =>
     `${YT_ORIGIN}/oembed?url=${encodeURIComponent(watchUrl)}&format=json`,
@@ -60,6 +67,10 @@ export const youtubePattern = {
   innertubeApiKey: /"INNERTUBE_API_KEY":"([^"]+)"/,
   /** 이어받기 호출 컨텍스트에 넣을 클라이언트 버전 */
   innertubeClientVersion: /"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"/,
+  /** 인증된(비공개) 이어받기 호출에 실어 보낼 방문자 ID — 2026-09-07에 실제 브라우저로 직접 검증한 결과,
+   * 비공개 재생목록의 continuation 호출은 이 값이 없어도 되는 경우도 있었지만 실제 웹 클라이언트가
+   * 항상 함께 보내므로 동일하게 맞춘다(아래 SAPISIDHASH 인증 헤더 관련 주석 참고). */
+  visitorData: /"VISITOR_DATA":"([^"]+)"/,
   /** 시청 페이지 videoDetails의 재생시간(초) */
   lengthSeconds: /"lengthSeconds":"(\d+)"/
 } as const;
