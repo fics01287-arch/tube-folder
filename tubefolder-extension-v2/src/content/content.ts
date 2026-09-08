@@ -152,7 +152,8 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
               title: v.title,
               channel: v.channel,
               kind,
-              duration: v.duration
+              duration: v.duration,
+              playlistAddedAt: v.playlistAddedAt
             }))
           );
           // 무료 티어 영상 개수 한도(FREE_VIDEO_LIMIT)에 걸린 경우는 "이미 보관 중이라 건너뜀"과

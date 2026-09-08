@@ -124,6 +124,11 @@ interface CollectedVideo {
   videoId: string;
   title: string;
   channel: string;
+  /** playlistItems.list의 snippet.publishedAt(ISO 8601, "이 영상이 재생목록에 추가된 시각") 파싱
+   * 결과(ms epoch) — VideoNode.playlistAddedAt으로 그대로 이어짐(2026-09-08 신설, 산들이 "날짜순
+   * 정렬을 재생목록 추가일 기준으로" 요청). 값이 없거나 파싱 실패 시 undefined(하위 도착점에서
+   * modifiedAt으로 자연 대체). */
+  addedAt?: number;
 }
 
 /**
@@ -173,10 +178,13 @@ export async function fetchPlaylistViaDataApi(
       }
       if (seen.has(videoId)) continue;
       seen.add(videoId);
+      const publishedAt = item?.snippet?.publishedAt;
+      const addedAtMs = typeof publishedAt === 'string' ? Date.parse(publishedAt) : NaN;
       collected.push({
         videoId,
         title: itemTitle || videoId,
-        channel: item?.snippet?.videoOwnerChannelTitle || item?.snippet?.channelTitle || ''
+        channel: item?.snippet?.videoOwnerChannelTitle || item?.snippet?.channelTitle || '',
+        addedAt: Number.isFinite(addedAtMs) ? addedAtMs : undefined
       });
     }
     onProgress?.({ fetched: collected.length });
@@ -216,7 +224,8 @@ export async function fetchPlaylistViaDataApi(
     videoId: v.videoId,
     title: v.title,
     channel: v.channel,
-    duration: durationById.get(v.videoId) ?? 0
+    duration: durationById.get(v.videoId) ?? 0,
+    playlistAddedAt: v.addedAt
   }));
 
   // playlistImport.ts(기존 스크래핑 경로)의 PlaylistFetchResult.debug와 형식만 맞춘 것 — 공식

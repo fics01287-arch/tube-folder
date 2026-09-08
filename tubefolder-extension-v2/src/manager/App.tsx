@@ -181,11 +181,23 @@ function folderContentCountsLabel(store: TubeStoreData, folderId: string): strin
   return `폴더 ${folders}개 · 영상 ${videos}개`;
 }
 
+// 탐색기의 "수정한 날짜" 열·정렬 기준 값 — 영상은 산들 요청(2026-09-08)으로 "폴더에 넣은 시각"이
+// 아니라 "유튜브 재생목록에 실제로 추가된 시각"(youtubeDataApi.ts가 playlistItems.list의
+// snippet.publishedAt에서 받아와 VideoNode.playlistAddedAt에 저장)을 우선 쓴다 — 재생목록을
+// 여러 날에 나눠 가져오거나 정리하다 폴더를 옮겨도 "원래 언제 추가한 영상인지" 순서가 안 흔들리게
+// 하기 위함. 이 값이 없는 영상(공식 API 실패 시 폴백되는 기존 스크래핑 경로로 가져왔거나, 이 기능
+// 도입 전에 이미 저장돼 있던 영상)은 기존처럼 modifiedAt으로 자연스럽게 대체된다(하위호환, 별도
+// 마이그레이션 불필요). 폴더는 "재생목록에 추가된 시각" 개념 자체가 없으므로 항상 modifiedAt 그대로.
+function nodeDateValue(node: TubeNode): number {
+  if (isVideo(node) && node.playlistAddedAt != null) return node.playlistAddedAt;
+  return node.modifiedAt;
+}
+
 // 정렬 기준별 1차 비교값(방향·이름 보조정렬은 sortNodes에서 처리) — 이름순은 기존 로캘 자연정렬 그대로.
 function compareByKey(a: TubeNode, b: TubeNode, sortKey: Settings['sortKey'], store: TubeStoreData): number {
   switch (sortKey) {
     case 'date':
-      return a.modifiedAt - b.modifiedAt;
+      return nodeDateValue(a) - nodeDateValue(b);
     case 'type':
       return nodeTypeLabel(a, store).localeCompare(nodeTypeLabel(b, store), 'ko');
     case 'size':
@@ -2132,7 +2144,7 @@ export default function App() {
 
     return {
       name,
-      date: formatModifiedAt(node.modifiedAt),
+      date: formatModifiedAt(nodeDateValue(node)),
       type: nodeTypeLabel(node, store),
       size: nodeSizeLabel(node, store),
       actions

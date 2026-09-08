@@ -43,6 +43,12 @@ export interface VideoNode extends BaseNode {
   lastPosition?: number;
   /** 이어보기: 마지막으로 재생을 멈추거나 닫은 시각(ms epoch). modifiedAt/version과는 분리(touch() 미적용 — ALGORITHMS 참고) */
   lastWatchedAt?: number;
+  /** 유튜브 재생목록에 실제로 추가된 시각(ms epoch) — 공식 Data API의 playlistItems.snippet.publishedAt
+   * 원본 그대로(youtubeDataApi.ts에서 변환). "날짜순" 정렬 기준으로 modifiedAt(이 확장에 가져온 시각)
+   * 대신 우선 쓰기 위해 2026-09-08 신설(산들 요청, App.tsx의 nodeDateValue 참고). 기존 스크래핑
+   * 폴백 경로로 가져왔거나 이 필드 도입 전에 저장된 영상은 없음(optional, 하위호환 — 없으면
+   * modifiedAt으로 자연스럽게 대체됨). */
+  playlistAddedAt?: number;
 }
 
 export type TubeNode = FolderNode | VideoNode;

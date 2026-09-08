@@ -18,6 +18,10 @@ export interface PlaylistVideo {
   channel: string;
   /** 재생시간(초). 재생목록 페이지 데이터에 이미 포함돼 있어 추가 네트워크 호출 없이 얻음(0 = 못 구함/라이브 방송). */
   duration: number;
+  /** 유튜브 재생목록에 실제로 추가된 시각(ms epoch) — 이 스크래핑 경로(/browse 이어받기)의 페이지
+   * 데이터에는 해당 정보가 없어 항상 undefined(공식 API 경로인 youtubeDataApi.ts만 채워 줌,
+   * VideoNode.playlistAddedAt 참고). */
+  playlistAddedAt?: number;
 }
 
 export interface PlaylistFetchProgress {

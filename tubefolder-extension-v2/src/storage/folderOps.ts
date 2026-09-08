@@ -143,6 +143,10 @@ export interface ImportVideoInput {
   kind?: 'video' | 'music';
   /** 재생시간(초). ROADMAP 4단계 "duration 정밀 수집" — 없으면 0(미수집)으로 저장. */
   duration?: number;
+  /** 유튜브 재생목록에 실제로 추가된 시각(ms epoch, VideoNode.playlistAddedAt 참고). 공식 API로
+   * 가져온 경우에만 있음 — 없으면 undefined로 저장(마이그레이션 불필요, App.tsx의 nodeDateValue가
+   * modifiedAt으로 대체). */
+  playlistAddedAt?: number;
 }
 
 export interface ImportVideosResult {
@@ -211,6 +215,7 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
       createdAt: t,
       modifiedAt: t,
       order: order++,
+      ...(v.playlistAddedAt != null ? { playlistAddedAt: v.playlistAddedAt } : {}),
       ...meta
     };
     data.nodes[id] = node;
