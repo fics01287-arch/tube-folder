@@ -121,10 +121,18 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
         }
       }
 
+      // 공식 API로 성공했는데도 실제 저장된 "재생목록 추가일"(playlistAddedAt)이 없는 영상이
+      // 섞여있는 문제를 진단하기 위한 카운트(2026-09-08, 산들이 "그대로야"를 반복 보고해 콘솔
+      // 없이도 바로 확인할 수 있게 가져오기 확인창 자체에 표시). 공식 API가 아닐 때는 애초에
+      // playlistAddedAt을 채우지 않으므로(옛 스크래핑 경로) 표시하지 않는다.
+      const withDate = usedOfficialApi ? videos.filter((v) => v.playlistAddedAt != null).length : null;
+
       showMiniPopup({
         mode: 'prompt',
         title: '재생목록 가져오기',
-        message: `영상 ${videos.length}개를 새 폴더로 가져옵니다. 폴더 이름을 확인하거나 수정하세요.`,
+        message: `영상 ${videos.length}개를 새 폴더로 가져옵니다. 폴더 이름을 확인하거나 수정하세요.${
+          withDate != null ? ` (재생목록 추가일 인식: ${withDate}/${videos.length}개)` : ''
+        }`,
         // 재생목록 가져오기를 실행할 때마다 보여주는 일반 안내(2026-09-08 신설, 2026-09-08 공식
         // API 도입 후 조건부로 변경) — 대형·비공개 재생목록에서 재생목록 자체에 표시된 전체 개수와
         // 실제로 가져와지는 개수(위 videos.length)가 다를 수 있음을 실사용 중 발견(예: 표시 218개인데
