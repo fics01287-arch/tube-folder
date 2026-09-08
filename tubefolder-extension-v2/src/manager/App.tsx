@@ -195,11 +195,21 @@ function nodeDateValue(node: TubeNode): number {
   return node.modifiedAt;
 }
 
+// "튜브폴더 추가일" 열·정렬 기준 값 — 위 nodeDateValue(유튜브 추가일)와 구분해서 산들이 요청한
+// 두 번째 날짜 기준(2026-09-08 신설). createdAt은 노드가 처음 만들어질 때 한 번만 찍히고
+// touch()(이름변경·이동·아이콘변경 등)로는 절대 갱신되지 않아, "이 항목을 튜브폴더에 실제로
+// 추가한 시점"을 항상 정확히 가리킨다(폴더·영상 모두 동일하게 존재하는 필드라 폴백 불필요).
+function nodeAddedAtValue(node: TubeNode): number {
+  return node.createdAt;
+}
+
 // 정렬 기준별 1차 비교값(방향·이름 보조정렬은 sortNodes에서 처리) — 이름순은 기존 로캘 자연정렬 그대로.
 function compareByKey(a: TubeNode, b: TubeNode, sortKey: Settings['sortKey'], store: TubeStoreData): number {
   switch (sortKey) {
     case 'date':
       return nodeDateValue(a) - nodeDateValue(b);
+    case 'addedAt':
+      return nodeAddedAtValue(a) - nodeAddedAtValue(b);
     case 'type':
       return nodeTypeLabel(a, store).localeCompare(nodeTypeLabel(b, store), 'ko');
     case 'size':
@@ -2028,7 +2038,7 @@ export default function App() {
     isFolder: boolean,
     store: TubeStoreData,
     dragProps?: DragHandleProps
-  ): { name: ReactNode; date: ReactNode; type: ReactNode; size: ReactNode; actions: ReactNode } {
+  ): { name: ReactNode; date: ReactNode; addedAt: ReactNode; type: ReactNode; size: ReactNode; actions: ReactNode } {
     const name = (
       <>
         {!isTrash && (
@@ -2171,6 +2181,7 @@ export default function App() {
     return {
       name,
       date: formatModifiedAt(nodeDateValue(node)),
+      addedAt: formatModifiedAt(nodeAddedAtValue(node)),
       type: nodeTypeLabel(node, store),
       size: nodeSizeLabel(node, store),
       actions
@@ -2194,7 +2205,8 @@ export default function App() {
           <AppInfo />
         </div>
         <p className="tf-subtitle">
-          목록·아이콘 그리드(아주 큰/큰/보통/작은)·표(자세히) 보기, 이름·날짜·유형·크기 정렬(오름·내림차순)을
+          목록·아이콘 그리드(아주 큰/큰/보통/작은)·표(자세히) 보기, 이름·유튜브 추가일·튜브폴더 추가일·유형·크기
+          정렬(오름·내림차순)을
           지원합니다. 항목이 {VIRTUALIZE_THRESHOLD}개를 넘는 폴더는 가상 스크롤이 자동으로 켜집니다(직접 순서
           드래그 모드에서는 항목을 전부 그려야 해서 예외).
         </p>
@@ -2431,7 +2443,8 @@ export default function App() {
               onChange={(e) => handleSortModeChange(e.target.value as Settings['sortKey'])}
             >
               <option value="name">이름순</option>
-              <option value="date">날짜순</option>
+              <option value="date">날짜순 (유튜브 추가일)</option>
+              <option value="addedAt">날짜순 (튜브폴더 추가일)</option>
               <option value="type">유형순</option>
               <option value="size">크기순</option>
               <option value="none">직접 순서(드래그로 정렬)</option>
@@ -2626,7 +2639,8 @@ export default function App() {
                 {(
                   [
                     { key: 'name', label: '이름' },
-                    { key: 'date', label: '수정한 날짜' },
+                    { key: 'date', label: '유튜브 추가일' },
+                    { key: 'addedAt', label: '튜브폴더 추가일' },
                     { key: 'type', label: '유형' },
                     { key: 'size', label: '크기' }
                   ] as { key: Settings['sortKey']; label: string }[]
@@ -2659,6 +2673,7 @@ export default function App() {
                       <div className="tf-vtable-cell tf-trow-handle-cell" />
                       <div className="tf-vtable-cell tf-tcell-name">{c.name}</div>
                       <div className="tf-vtable-cell tf-tcell-date">{c.date}</div>
+                      <div className="tf-vtable-cell tf-tcell-addedat">{c.addedAt}</div>
                       <div className="tf-vtable-cell tf-tcell-type">{c.type}</div>
                       <div className="tf-vtable-cell tf-tcell-size">{c.size}</div>
                       <div className="tf-vtable-cell tf-tcell-actions">{c.actions}</div>
@@ -2730,7 +2745,8 @@ export default function App() {
                     {(
                       [
                         { key: 'name', label: '이름' },
-                        { key: 'date', label: '수정한 날짜' },
+                        { key: 'date', label: '유튜브 추가일' },
+                        { key: 'addedAt', label: '튜브폴더 추가일' },
                         { key: 'type', label: '유형' },
                         { key: 'size', label: '크기' }
                       ] as { key: Settings['sortKey']; label: string }[]
@@ -2750,7 +2766,7 @@ export default function App() {
                 <tbody>
                   {children.length === 0 && (
                     <tr>
-                      <td className="tf-empty" colSpan={6}>
+                      <td className="tf-empty" colSpan={7}>
                         비어 있습니다.
                       </td>
                     </tr>
@@ -2765,6 +2781,7 @@ export default function App() {
                         <TrashDropZoneRow key={node.id} id={node.id}>
                           <td className="tf-tcell-name">{c.name}</td>
                           <td className="tf-tcell-date">{c.date}</td>
+                          <td className="tf-tcell-addedat">{c.addedAt}</td>
                           <td className="tf-tcell-type">{c.type}</td>
                           <td className="tf-tcell-size">{c.size}</td>
                           <td className="tf-tcell-actions">{c.actions}</td>
@@ -2789,6 +2806,7 @@ export default function App() {
                             <>
                               <td className="tf-tcell-name">{c.name}</td>
                               <td className="tf-tcell-date">{c.date}</td>
+                              <td className="tf-tcell-addedat">{c.addedAt}</td>
                               <td className="tf-tcell-type">{c.type}</td>
                               <td className="tf-tcell-size">{c.size}</td>
                               <td className="tf-tcell-actions">{c.actions}</td>

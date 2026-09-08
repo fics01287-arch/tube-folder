@@ -55,7 +55,10 @@ export type TubeNode = FolderNode | VideoNode;
 
 export interface Settings {
   view: 'xl' | 'large' | 'medium' | 'small' | 'list' | 'details';
-  sortKey: 'name' | 'date' | 'type' | 'size' | 'none';
+  /** 'date' = 유튜브 추가일(영상은 playlistAddedAt 우선, 없으면 modifiedAt 대체 / 폴더는 modifiedAt).
+   * 'addedAt' = 튜브폴더 추가일(createdAt — 이 확장에 실제로 추가된 시각, 이름변경·이동 등으로도
+   * 안 바뀜). 산들 요청(2026-09-08)으로 두 날짜 기준을 구분해 각각 정렬·표시할 수 있게 분리. */
+  sortKey: 'name' | 'date' | 'addedAt' | 'type' | 'size' | 'none';
   sortDir: 'asc' | 'desc';
   /** 휴지통 보관 기간(일). null = 자동 삭제 없음. 기본 30일(ROADMAP 4단계 "휴지통 보존기간 설정"). */
   trashRetentionDays: number | null;

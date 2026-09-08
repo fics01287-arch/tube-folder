@@ -903,7 +903,7 @@ select:focus-visible {
 }
 
 /* ── 표(자세히) 보기(ROADMAP 4단계 "아이콘 그리드 4종·표 보기") ───────────── */
-/* 탐색기의 "자세히 보기" 표(이름·수정한 날짜·유형·크기 열)에 대응. */
+/* 탐색기의 "자세히 보기" 표(이름·유튜브 추가일·튜브폴더 추가일·유형·크기 열)에 대응. */
 .tf-table {
   width: 100%;
   border-collapse: collapse;
@@ -956,6 +956,7 @@ select:focus-visible {
 }
 
 .tf-tcell-date,
+.tf-tcell-addedat,
 .tf-tcell-type,
 .tf-tcell-size {
   color: #aaa;
