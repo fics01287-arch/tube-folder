@@ -1608,12 +1608,17 @@ export default function App() {
       // 미완료·동의 거부·네트워크 오류 등) 조용히 기존 공개 스크래핑으로 대체한다(content.ts와
       // 동일한 정책 — 신규 경로 도입으로 기존에 되던 가져오기가 안 되는 회귀를 막기 위함).
       let videos: PlaylistVideo[];
+      let apiFailReason: string | null = null;
       try {
         const apiResult = await fetchPlaylistViaDataApi(playlistId, (p) =>
           setImportStatus(`영상 목록을 가져오는 중... (${p.fetched}개 인식됨)`)
         );
         videos = apiResult.videos;
       } catch (apiError) {
+        // 왜 대체됐는지가 콘솔에만 남으면 산들처럼 개발자도구를 안 여는 사용자는 원인을 알 방법이
+        // 없다(2026-09-08, "그대로야"로 재현 안 되던 문제 진단 중 발견) — 최종 완료 메시지에
+        // 이유를 그대로 노출해 콘솔 없이도 바로 알 수 있게 한다.
+        apiFailReason = apiError instanceof Error ? apiError.message : String(apiError);
         console.warn('[튜브폴더] 공식 API 가져오기 실패, 기존 방식으로 대체:', apiError);
         videos = await fetchPlaylistVideos(playlistId, (p) =>
           setImportStatus(`영상 목록을 가져오는 중... (${p.fetched}개 인식됨)`)
@@ -1640,13 +1645,14 @@ export default function App() {
       }
       await refresh(currentFolderId);
       scheduleAutoSync();
+      const fallbackNote = apiFailReason ? ` (공식 API 실패로 예전 방식 사용: ${apiFailReason})` : '';
       if (result.limitReached) {
         setImportStatus(
-          `무료 버전 한도라 ${result.added}개만 추가되고 나머지는 건너뛰었습니다. 전체를 가져오려면 업그레이드가 필요합니다.`
+          `무료 버전 한도라 ${result.added}개만 추가되고 나머지는 건너뛰었습니다. 전체를 가져오려면 업그레이드가 필요합니다.${fallbackNote}`
         );
         setLicenseOpenSignal((n) => n + 1);
       } else {
-        setImportStatus(`완료: ${result.added}개 추가됨, ${result.skipped}개는 이미 있어 건너뜀`);
+        setImportStatus(`완료: ${result.added}개 추가됨, ${result.skipped}개는 이미 있어 건너뜀${fallbackNote}`);
       }
     } catch (e) {
       setImportStatus(null);
