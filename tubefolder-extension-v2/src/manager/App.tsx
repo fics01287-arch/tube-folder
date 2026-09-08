@@ -37,6 +37,8 @@ import {
   trashFolder
 } from '../storage/folderOps';
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
+import type { PlaylistVideo } from '../storage/playlistImport';
+import { fetchPlaylistViaDataApi } from '../storage/youtubeDataApi';
 import { youtubeUrl } from '../shared/youtubeSelectors';
 import { DEFAULT_FOLDER_ICON, FOLDER_ICON_CATEGORIES } from '../shared/folderIcons';
 import { useEscapeClose } from './useEscapeClose';
@@ -1597,9 +1599,26 @@ export default function App() {
     setImporting(true);
     setImportStatus('재생목록 불러오는 중...');
     try {
-      const videos = await fetchPlaylistVideos(playlistId, (p) =>
-        setImportStatus(`영상 목록을 가져오는 중... (${p.fetched}개 인식됨)`)
-      );
+      // 매니저 탭(chrome-extension:// 페이지)은 content.ts와 달리 chrome.identity를 직접 쓸 수
+      // 있는 컨텍스트라(확장 페이지·서비스워커 전용, 콘텐츠 스크립트에는 없음 — youtubeDataApi.ts
+      // 상단 주석 참고) background 경유 메시지 없이 공식 API를 바로 호출할 수 있다. 2026-09-08까지
+      // 이 입력창은 fetchPlaylistVideos(인증 없는 공개 스크래핑, "재생목록 추가일" 정보가 없음)만
+      // 써서 content.ts 쪽 우클릭 메뉴 가져오기와 다르게 동작하고 있었음(산들이 "날짜순 정렬이
+      // 안 맞는다"고 지적해 발견) — 여기도 똑같이 공식 API를 우선 시도하고, 실패하면(설정
+      // 미완료·동의 거부·네트워크 오류 등) 조용히 기존 공개 스크래핑으로 대체한다(content.ts와
+      // 동일한 정책 — 신규 경로 도입으로 기존에 되던 가져오기가 안 되는 회귀를 막기 위함).
+      let videos: PlaylistVideo[];
+      try {
+        const apiResult = await fetchPlaylistViaDataApi(playlistId, (p) =>
+          setImportStatus(`영상 목록을 가져오는 중... (${p.fetched}개 인식됨)`)
+        );
+        videos = apiResult.videos;
+      } catch (apiError) {
+        console.warn('[튜브폴더] 공식 API 가져오기 실패, 기존 방식으로 대체:', apiError);
+        videos = await fetchPlaylistVideos(playlistId, (p) =>
+          setImportStatus(`영상 목록을 가져오는 중... (${p.fetched}개 인식됨)`)
+        );
+      }
       setImportStatus(`폴더에 추가하는 중... (${videos.length}개)`);
       const result = await addVideosToFolder(
         currentFolderId,
@@ -1608,7 +1627,8 @@ export default function App() {
           videoId: v.videoId,
           title: v.title,
           channel: v.channel,
-          duration: v.duration
+          duration: v.duration,
+          playlistAddedAt: v.playlistAddedAt
         }))
       );
       setPlaylistUrl('');
