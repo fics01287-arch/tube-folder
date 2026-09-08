@@ -629,21 +629,9 @@ select:focus-visible {
   margin-right: 4px;
 }
 
-/* 목록·표 보기의 선택 체크박스 — 이름 버튼 앞에 항상 보이게(호버 없이) 둔다. */
-.tf-select-checkbox {
-  margin-right: 8px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-/* 아이콘 그리드 보기의 선택 체크박스 — 타일 오른쪽 위 코너에 고정(왼쪽 위는 드래그 손잡이가 씀) */
-.tf-select-checkbox-tile {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  z-index: 2;
-  cursor: pointer;
-}
+/* (2026-09-08 제거) 체크박스는 없앴다 — "1번 아이콘은 없애줘" 요청. 다중 선택은 Ctrl/Shift+클릭
+   (handleRowClickCapture)으로 대체했다. 예전 .tf-select-checkbox/.tf-select-checkbox-tile 규칙은
+   더 이상 쓰이지 않아 삭제. */
 
 /* ── 정렬 · 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") ───────────── */
 .tf-sort-control {

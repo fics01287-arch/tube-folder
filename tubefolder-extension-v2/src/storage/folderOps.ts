@@ -441,7 +441,7 @@ export async function reorderChildren(parentId: string, orderedIds: string[]): P
  * (2026-08-29, "이동/이름변경 실행취소" 요청과 함께 신규 추가 — v1까지는 같은 폴더 안 드래그
  * 재정렬만 있었고 폴더 간 이동 자체가 없었음. ROADMAP-CHECKLIST.md 참고)
  * 휴지통으로의 이동은 이 함수로 하지 않는다 — prevParentId 기록·보관기간 정책 안내 팝업 등
- * 휴지통 전용 로직은 trashFolder()가 유일하게 담당하므로 여기서 섞으면 안 됨.
+ * 휴지통 전용 로직은 trashNode()가 유일하게 담당하므로 여기서 섞으면 안 됨.
  */
 export async function moveNode(nodeId: string, newParentId: string): Promise<void> {
   const data = await load();
@@ -625,24 +625,31 @@ export async function duplicateNode(nodeId: string, destFolderId: string): Promi
   return rootCopy.id;
 }
 
-/** 폴더(+하위 트리 전체)를 휴지통으로 이동. 완전삭제가 아니라 소프트 삭제(ALGORITHMS.md trashNodes와 동일). */
-export async function trashFolder(folderId: string): Promise<void> {
+/**
+ * 폴더(+하위 트리 전체) 또는 영상을 휴지통으로 이동. 완전삭제가 아니라 소프트 삭제
+ * (ALGORITHMS.md trashNodes와 동일).
+ * (2026-09-08, "영상도 삭제할 수 있게 해줘" 요청으로 폴더 전용이던 trashFolder()를 일반화 —
+ * 폴더냐 영상이냐에 따라 달라지는 로직이 원래 없었고(단순히 parentId를 휴지통으로 바꾸는 것뿐),
+ * 유일한 차이인 "폴더만 허용" 타입 검사만 없앴다. 영상은 하위 트리가 없어 그 부분은 자연히
+ * 아무 영향이 없다.)
+ */
+export async function trashNode(nodeId: string): Promise<void> {
   const data = await load();
-  const folder = data.nodes[folderId];
-  if (!folder || folder.type !== 'folder') throw new FolderOpError('폴더를 찾을 수 없습니다.');
-  if (folderId === data.rootId || folderId === data.trashId) {
-    throw new FolderOpError('이 폴더는 삭제할 수 없습니다.');
+  const node = data.nodes[nodeId];
+  if (!node) throw new FolderOpError('항목을 찾을 수 없습니다.');
+  if (nodeId === data.rootId || nodeId === data.trashId) {
+    throw new FolderOpError('이 항목은 삭제할 수 없습니다.');
   }
 
-  folder.prevParentId = folder.parentId ?? undefined;
-  folder.parentId = data.trashId;
-  await touch(folder);
-  // 하위 트리는 parentId 참조로 따라오므로 별도 처리 불필요(DATA-MODEL.md §4)
+  node.prevParentId = node.parentId ?? undefined;
+  node.parentId = data.trashId;
+  await touch(node);
+  // 하위 트리는 parentId 참조로 따라오므로 별도 처리 불필요(DATA-MODEL.md §4) — 영상은 하위 트리가 없음.
   await save(data);
 }
 
 /**
- * 휴지통에서 복원 — trashFolder()가 기록해 둔 prevParentId(원래 있던 폴더)로 되돌린다.
+ * 휴지통에서 복원 — trashNode()가 기록해 둔 prevParentId(원래 있던 폴더)로 되돌린다.
  * (신설 2026-08-30, ROADMAP-CHECKLIST.md 4단계 "휴지통 복원 전용 버튼" 작업순서 1/8)
  * moveNode()를 그대로 쓰지 않는 이유: moveNode는 호출부가 목적지를 직접 골라야 하는 범용 함수이고,
  * 복원은 항상 prevParentId를 자동으로 계산해야 하는 별도 정책(원래 위치 우선, 실패 시 최상위 폴더)이라

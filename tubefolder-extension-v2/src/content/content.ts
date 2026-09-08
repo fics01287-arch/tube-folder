@@ -4,7 +4,7 @@
 // 반영한다(content script도 "storage" 권한으로 chrome.storage.local에 접근 가능).
 
 import { showMiniPopup } from './miniPopup';
-import { createFolder, renameFolder, trashFolder, addVideosToFolder } from '../storage/folderOps';
+import { createFolder, renameFolder, trashNode, addVideosToFolder } from '../storage/folderOps';
 import { fetchPlaylistWithAuth, PlaylistImportError } from '../storage/playlistImport';
 import { youtubeUrl } from '../shared/youtubeSelectors';
 import { FREE_VIDEO_LIMIT } from '../license/licenseEngine';
@@ -187,7 +187,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
       danger: true,
       onSubmit: async () => {
         if (!folderId) throw new Error('대상 폴더를 확인할 수 없습니다.');
-        await trashFolder(folderId);
+        await trashNode(folderId);
         flashBadge('🗑', '#888888');
       }
     });

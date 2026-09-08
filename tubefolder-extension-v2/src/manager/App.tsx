@@ -34,7 +34,7 @@ import {
   setSortMode,
   setTrashRetentionDays,
   setView,
-  trashFolder
+  trashNode
 } from '../storage/folderOps';
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
 import type { PlaylistVideo } from '../storage/playlistImport';
@@ -259,6 +259,7 @@ function SortableRow({
   coDragging,
   dragHandleLabel,
   onContextMenu,
+  onClickCapture,
   children
 }: {
   id: string;
@@ -268,6 +269,7 @@ function SortableRow({
   coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
+  onClickCapture?: (e: React.MouseEvent) => void;
   children: (dragProps: DragHandleProps) => ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
@@ -285,7 +287,13 @@ function SortableRow({
           ? ' tf-row-drop-into'
           : '';
   return (
-    <li ref={setNodeRef} style={style} className={'tf-row' + dropClass} onContextMenu={onContextMenu}>
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={'tf-row' + dropClass}
+      onContextMenu={onContextMenu}
+      onClickCapture={onClickCapture}
+    >
       {!disabled && (
         <span className="tf-drag-handle" aria-label={dragHandleLabel} {...attributes} {...listeners}>
           ⠿
@@ -370,6 +378,7 @@ function SortableGridItem({
   coDragging,
   dragHandleLabel,
   onContextMenu,
+  onClickCapture,
   children
 }: {
   id: string;
@@ -379,6 +388,7 @@ function SortableGridItem({
   coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
+  onClickCapture?: (e: React.MouseEvent) => void;
   children: (dragProps: DragHandleProps) => ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
@@ -396,7 +406,13 @@ function SortableGridItem({
           ? ' tf-tile-drop-into'
           : '';
   return (
-    <div ref={setNodeRef} style={style} className={'tf-tile' + dropClass} onContextMenu={onContextMenu}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={'tf-tile' + dropClass}
+      onContextMenu={onContextMenu}
+      onClickCapture={onClickCapture}
+    >
       {!disabled && (
         <span className="tf-drag-handle tf-tile-drag-handle" aria-label={dragHandleLabel} {...attributes} {...listeners}>
           ⠿
@@ -417,6 +433,7 @@ function SortableTableRow({
   coDragging,
   dragHandleLabel,
   onContextMenu,
+  onClickCapture,
   children
 }: {
   id: string;
@@ -426,6 +443,7 @@ function SortableTableRow({
   coDragging?: boolean;
   dragHandleLabel: string;
   onContextMenu?: (e: React.MouseEvent) => void;
+  onClickCapture?: (e: React.MouseEvent) => void;
   children: (dragProps: DragHandleProps) => ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
@@ -443,7 +461,13 @@ function SortableTableRow({
           ? ' tf-row-drop-into'
           : '';
   return (
-    <tr ref={setNodeRef} style={style} className={'tf-trow' + dropClass} onContextMenu={onContextMenu}>
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className={'tf-trow' + dropClass}
+      onContextMenu={onContextMenu}
+      onClickCapture={onClickCapture}
+    >
       <td className="tf-trow-handle-cell">
         {!disabled && (
           <span className="tf-drag-handle" aria-label={dragHandleLabel} {...attributes} {...listeners}>
@@ -620,7 +644,6 @@ export default function App() {
 
   // 동기화 등 비동기 콜백이 "지금 보고 있는 폴더"를 유지한 채 새로고침할 수 있게 ref로 추적
   const currentFolderIdRef = useRef<string | null>(null);
-  const checkboxShiftRef = useRef(false);
   currentFolderIdRef.current = currentFolderId;
   const refreshKeepingFolder = useCallback(() => {
     refresh(currentFolderIdRef.current);
@@ -795,11 +818,20 @@ export default function App() {
     setSelectAnchorId(id);
   }
 
-  // 일괄 휴지통 이동은 폴더만 가능(trashFolder가 폴더 전용 — 영상은 애초에 개별 삭제 버튼도 없음).
-  const selectedFolderIds = useMemo(
-    () => (store ? Array.from(selectedIds).filter((id) => store.nodes[id]?.type === 'folder') : []),
-    [selectedIds, store]
-  );
+  // 체크박스를 없앤 뒤(2026-09-08, "1번 아이콘은 없애줘" 요청) 다중 선택을 유지하는 대체 수단 —
+  // 항목을 감싸는 행/타일 전체에 캡처 단계(capture phase)로 걸어서, Ctrl/Cmd+클릭이나 Shift+클릭일
+  // 때만 개입한다. 캡처 단계에서 stopPropagation()을 호출하면 그 안쪽(이름 버튼의 onClick=열기/재생)
+  // 까지 이벤트가 전달되지 않으므로, 다중 선택 클릭이 동시에 폴더를 열거나 영상을 재생시키는 일이
+  // 없다. 수정자 키가 전혀 없는 일반 클릭은 그대로 통과시켜(반환만 하고 아무 것도 안 함) 기존
+  // "클릭하면 열기/재생" 동작이 손상되지 않게 한다(요청 14번 "없애지 말고, 클릭했을 때 파일을
+  // 실행하는 기능만 적용해줘"에 따른 결정).
+  function handleRowClickCapture(e: React.MouseEvent, id: string) {
+    if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return;
+    if (id === store?.trashId) return; // 휴지통은 체크박스 시절에도 선택 대상이 아니었음 — 그대로 유지
+    e.preventDefault();
+    e.stopPropagation();
+    toggleSelect(id, e.shiftKey);
+  }
 
   // 우클릭 컨텍스트 메뉴 열기 — id가 있으면(항목 위 우클릭) 그 항목이 이미 선택돼 있지 않을 때만
   // 선택을 그 항목 하나로 교체한다(탐색기 관례: 선택 안 된 항목을 우클릭하면 그 항목만 선택되고,
@@ -876,6 +908,32 @@ export default function App() {
     closeContextMenu();
   }
 
+  // 항목별 메뉴(우클릭 컨텍스트 메뉴와 동일한 목록, 2026-09-08 "2번 아이콘을 선택하면 복사/삭제/
+  // 이동/잘라내기를 선택할 수 있게" 요청으로 신설)의 "이동" — openContextMenu가 이미 클릭한 항목을
+  // 선택에 포함시켜 두므로(선택 안 돼 있었으면 그 항목 하나로 교체, 이미 다중 선택 중이었으면 전체
+  // 유지) 항상 selectedIds 전체를 대상으로 기존 이동 다이얼로그를 그대로 연다 — 단일 이동(기존 📁
+  // 버튼)과 다중 선택 후 일괄 이동(툴바)이 이미 같은 handleConfirmMove로 합쳐져 있는 것과 동일한 원칙.
+  function handleMenuMove() {
+    closeContextMenu();
+    if (selectedIds.size === 0) return;
+    setMoveDialogIds(Array.from(selectedIds));
+  }
+
+  // 항목별 메뉴의 "삭제" — 선택이 하나면 기존 개별 삭제 흐름(handleTrashClick, 처음 한 번은 정책
+  // 안내 팝업)을 그대로 타고, 여럿이면 다중 선택 툴바의 일괄 삭제 확인(bulkTrashConfirming)을 그대로
+  // 재사용한다. 새 삭제 로직을 만들지 않고 기존 두 경로에 얹기만 해서 정책 안내·보관기간 안내 문구가
+  // 어느 경로로 삭제하든 항상 동일하게 보이게 한다.
+  function handleMenuDelete() {
+    closeContextMenu();
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (ids.length === 1) {
+      handleTrashClick(ids[0]);
+    } else {
+      setBulkTrashConfirming(true);
+    }
+  }
+
   // 붙여넣기는 항상 "지금 보고 있는 폴더"(currentFolderId)를 대상으로 한다 — 우클릭한 항목이
   // 폴더여도 그 폴더 "안"에 붙여넣지는 않는다(탐색기처럼 "여기에 붙여넣기" 세부 대상까지는
   // 이번 범위에서 제외 — 범위를 좁게 유지하는 편이 혼란이 적다고 판단).
@@ -925,15 +983,15 @@ export default function App() {
   // 실행취소/다시 실행/F2(이름변경)/Delete(휴지통 이동)/Ctrl+C·X·V(복사·잘라내기·붙여넣기)
   // 전역 단축키. 실행취소는 Ctrl+Z/Cmd+Z, 다시 실행은 Ctrl+Y(윈도우 관례)와 Ctrl+Shift+Z/
   // Cmd+Shift+Z(맥·여러 앱 공통 관례)를 모두 지원한다(2026-08-29 "다시 실행 기능도 추가해줘"
-  // 요청으로 추가). F2/Delete/Ctrl+C/X/V는 다중 선택(2/8, selectedIds/selectedFolderIds)이
+  // 요청으로 추가). F2/Delete/Ctrl+C/X/V는 다중 선택(2/8, selectedIds)이
   // 이미 있어야 "지금 어떤 항목에 적용할지"를 알 수 있어서 그 기능 이후로 미뤄뒀던 항목들
   // (작업순서 3/8·4/8, 2026-08-30 산들 착수 승인) — F2는 폴더 하나만 선택돼 있을 때 기존 ✏️
   // 버튼과 동일하게 이름변경 모드로 진입시키고(영상은 이름변경 자체가 없어 대상에서 제외),
-  // Delete는 선택된 폴더가 있으면 다중 선택 툴바의 🗑 버튼을 누른 것과 동일하게 확인 단계
-  // (bulkTrashConfirming)부터 띄운다(즉시 삭제하지 않음 — 탐색기 Delete 키도 기본적으로 확인을
-  // 거치는 것과 같은 원칙, 영상은 개별 삭제가 없어 대상에서 제외). Ctrl+C/X는 handleCopy/
-  // handleCut, Ctrl+V는 handlePaste를 그대로 호출한다(우클릭 메뉴와 동일한 함수 재사용 — 작업순서
-  // 4/8, 우클릭 컨텍스트 메뉴 참고).
+  // Delete는 선택된 항목(폴더 또는 영상)이 있으면 다중 선택 툴바의 🗑 버튼을 누른 것과 동일하게
+  // 확인 단계(bulkTrashConfirming)부터 띄운다(즉시 삭제하지 않음 — 탐색기 Delete 키도 기본적으로
+  // 확인을 거치는 것과 같은 원칙, 2026-09-08 trashFolder→trashNode 일반화로 영상도 대상에 포함).
+  // Ctrl+C/X는 handleCopy/handleCut, Ctrl+V는 handlePaste를 그대로 호출한다(우클릭 메뉴와 동일한
+  // 함수 재사용 — 작업순서 4/8, 우클릭 컨텍스트 메뉴 참고).
   // 이름변경 입력창 등 편집 가능한 요소에 포커스가 있거나, 다른 모달/확인 UI가 이미 열려있을
   // 때는 건드리지 않는다 — 브라우저 기본 텍스트 undo/redo·복사/붙여넣기를 가로채면 안 되고,
   // 모달 뒤에서 배경 단축키가 같이 발동하면 혼란스럽기 때문. (App.tsx에 keydown 리스너가
@@ -993,7 +1051,7 @@ export default function App() {
 
       if (isDelete) {
         if (currentFolderId === store?.trashId) return; // 휴지통 안에서는 Delete로 할 동작이 없음(영구삭제 없음)
-        if (selectedFolderIds.length === 0) return;
+        if (selectedIds.size === 0) return;
         e.preventDefault();
         setBulkTrashConfirming(true);
         return;
@@ -1020,7 +1078,6 @@ export default function App() {
     currentFolderId,
     store,
     selectedIds,
-    selectedFolderIds,
     editingId,
     deletingId,
     iconPickerFolderId,
@@ -1258,12 +1315,10 @@ export default function App() {
     const idsToMove =
       selectedIds.has(activeId) && selectedIds.size > 1 ? Array.from(selectedIds) : [activeId];
 
-    // 휴지통 타일(또는 사이드바의 휴지통 행) 위로 드롭 — 선택(또는 단일 드래그 항목) 중 폴더만 골라
-    // 일괄 휴지통 이동으로 처리한다. trashFolder()는 폴더 전용이라 영상은 대상에서 제외(개별 영상
-    // 삭제는 아직 범위 밖 — 기존 handleBulkTrash의 selectedFolderIds 필터링과 같은 원칙). 폴더가
-    // 하나도 없으면(영상만 드래그) 조용히 무시한다.
+    // 휴지통 타일(또는 사이드바의 휴지통 행) 위로 드롭 — 선택(또는 단일 드래그 항목) 전부를 일괄
+    // 휴지통 이동으로 처리한다(2026-09-08, trashFolder→trashNode 일반화로 영상도 대상에 포함).
     if (overRealId === store?.trashId) {
-      const idsToTrash = idsToMove.filter((id) => store?.nodes[id]?.type === 'folder');
+      const idsToTrash = idsToMove;
       if (idsToTrash.length === 0) return;
       setError(null);
       try {
@@ -1273,7 +1328,7 @@ export default function App() {
             ? `"${before.nodes[idsToTrash[0]]?.name ?? ''}" 휴지통으로 이동`
             : `${idsToTrash.length}개 항목 휴지통으로 이동`;
         for (const id of idsToTrash) {
-          await trashFolder(id);
+          await trashNode(id);
         }
         pushUndo({ label, snapshot: before });
         setSelectedIds(new Set());
@@ -1341,7 +1396,7 @@ export default function App() {
     try {
       const before = await load();
       const label = `"${before.nodes[id]?.name ?? ''}" 휴지통으로 이동`;
-      await trashFolder(id);
+      await trashNode(id);
       pushUndo({ label, snapshot: before });
       setDeletingId(null);
       await refresh(currentFolderId);
@@ -1396,16 +1451,18 @@ export default function App() {
     }
   }
 
-  // 다중 선택 툴바의 🗑 일괄 휴지통 이동 — trashFolder가 폴더 전용이라 selectedFolderIds(영상 제외)만
-  // 대상으로 한다. 한 번 확인을 거친 뒤(bulkTrashConfirming) 실행 — 개별 삭제의 확인 절차와 같은 원칙.
+  // 다중 선택 툴바의 🗑 일괄 휴지통 이동 — trashNode 일반화(2026-09-08)로 폴더·영상 구분 없이
+  // selectedIds 전체를 대상으로 한다. 한 번 확인을 거친 뒤(bulkTrashConfirming) 실행 — 개별 삭제의
+  // 확인 절차와 같은 원칙.
   async function handleBulkTrash() {
-    if (selectedFolderIds.length === 0) return;
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
     setError(null);
     try {
       const before = await load();
-      const label = `${selectedFolderIds.length}개 항목 휴지통으로 이동`;
-      for (const id of selectedFolderIds) {
-        await trashFolder(id);
+      const label = `${ids.length}개 항목 휴지통으로 이동`;
+      for (const id of ids) {
+        await trashNode(id);
       }
       pushUndo({ label, snapshot: before });
       setSelectedIds(new Set());
@@ -1496,7 +1553,7 @@ export default function App() {
       const before = await load();
       const label = `"${before.nodes[trashInfoModalFolderId]?.name ?? ''}" 휴지통으로 이동`;
       if (trashInfoCheckbox) await dismissTrashInfo();
-      await trashFolder(trashInfoModalFolderId);
+      await trashNode(trashInfoModalFolderId);
       pushUndo({ label, snapshot: before });
       setTrashInfoModalFolderId(null);
       await refresh(currentFolderId);
@@ -1712,20 +1769,6 @@ export default function App() {
   ): ReactNode {
     return (
       <>
-        {!isTrash && (
-          <input
-            type="checkbox"
-            className="tf-select-checkbox"
-            checked={selectedIds.has(node.id)}
-            onClick={(e) => {
-              e.stopPropagation();
-              checkboxShiftRef.current = e.shiftKey;
-            }}
-            onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
-            title="선택"
-            aria-label={`"${node.name}" 선택`}
-          />
-        )}
         {isFolder ? (
           editingId === node.id ? (
             <span className="tf-edit-row">
@@ -1838,15 +1881,33 @@ export default function App() {
             </button>
           </span>
         )}
-        {!isFolder && (
+        {/* (2026-09-08, "2번 아이콘을 선택하면 복사/삭제/이동/잘라내기를 선택할 수 있게" 요청)
+            영상 전용 단일 이동(➡️) 버튼을 없애고, 항목별 메뉴(복사·삭제·이동·잘라내기)를 여는
+            버튼(⋯)으로 바꿨다 — 우클릭 컨텍스트 메뉴와 동일한 openContextMenu()를 그대로 재사용해
+            메뉴 목록이 하나로 유지된다. */}
+        {!isFolder && deletingId === node.id && (
+          <span className="tf-row-actions tf-confirm-row">
+            <span className="tf-confirm-text">
+              휴지통으로 이동할까요?
+              {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
+            </span>
+            <button className="tf-btn tf-btn-danger-outline" onClick={() => confirmDelete(node.id)}>
+              삭제
+            </button>
+            <button className="tf-btn tf-btn-icon" onClick={() => setDeletingId(null)}>
+              취소
+            </button>
+          </span>
+        )}
+        {!isFolder && deletingId !== node.id && (
           <span className="tf-row-actions">
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogIds([node.id])}
-              title="다른 폴더로 이동"
-              aria-label={`"${node.name}" 다른 폴더로 이동`}
+              onClick={(e) => openContextMenu(e, node.id)}
+              title="복사·삭제·이동·잘라내기"
+              aria-label={`"${node.name}" 작업 메뉴 열기`}
             >
-              ➡️
+              ⋯
             </button>
           </span>
         )}
@@ -1886,20 +1947,6 @@ export default function App() {
 
     return (
       <>
-        {!isTrash && (
-          <input
-            type="checkbox"
-            className="tf-select-checkbox tf-select-checkbox-tile"
-            checked={selectedIds.has(node.id)}
-            onClick={(e) => {
-              e.stopPropagation();
-              checkboxShiftRef.current = e.shiftKey;
-            }}
-            onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
-            title="선택"
-            aria-label={`"${node.name}" 선택`}
-          />
-        )}
         {isFolder && editingId === node.id ? (
           <div className="tf-tile-media">{media}</div>
         ) : (
@@ -2028,15 +2075,35 @@ export default function App() {
             </button>
           </span>
         )}
-        {!isFolder && (
+        {/* (2026-09-08, "2번 아이콘을 선택하면 복사/삭제/이동/잘라내기를 선택할 수 있게" 요청)
+            영상 전용 단일 이동(➡️) 버튼을 없애고, 항목별 메뉴(복사·삭제·이동·잘라내기)를 여는
+            버튼(⋯)으로 바꿨다 — 우클릭 컨텍스트 메뉴와 동일한 openContextMenu()를 그대로 재사용해
+            메뉴 목록이 하나로 유지된다. */}
+        {!isFolder && deletingId === node.id && (
+          <span className="tf-tile-confirm">
+            <span className="tf-confirm-text">
+              휴지통으로 이동할까요?
+              {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
+            </span>
+            <span className="tf-tile-edit-actions">
+              <button className="tf-btn tf-btn-danger-outline" onClick={() => confirmDelete(node.id)}>
+                삭제
+              </button>
+              <button className="tf-btn tf-btn-icon" onClick={() => setDeletingId(null)}>
+                취소
+              </button>
+            </span>
+          </span>
+        )}
+        {!isFolder && deletingId !== node.id && (
           <span className="tf-tile-actions">
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogIds([node.id])}
-              title="다른 폴더로 이동"
-              aria-label={`"${node.name}" 다른 폴더로 이동`}
+              onClick={(e) => openContextMenu(e, node.id)}
+              title="복사·삭제·이동·잘라내기"
+              aria-label={`"${node.name}" 작업 메뉴 열기`}
             >
-              ➡️
+              ⋯
             </button>
           </span>
         )}
@@ -2053,20 +2120,6 @@ export default function App() {
   ): { name: ReactNode; date: ReactNode; addedAt: ReactNode; type: ReactNode; size: ReactNode; actions: ReactNode } {
     const name = (
       <>
-        {!isTrash && (
-          <input
-            type="checkbox"
-            className="tf-select-checkbox"
-            checked={selectedIds.has(node.id)}
-            onClick={(e) => {
-              e.stopPropagation();
-              checkboxShiftRef.current = e.shiftKey;
-            }}
-            onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
-            title="선택"
-            aria-label={`"${node.name}" 선택`}
-          />
-        )}
         {isFolder && editingId === node.id ? (
         <span className="tf-edit-row">
           <input
@@ -2175,15 +2228,33 @@ export default function App() {
             </button>
           </span>
         )}
-        {!isFolder && (
+        {/* (2026-09-08, "2번 아이콘을 선택하면 복사/삭제/이동/잘라내기를 선택할 수 있게" 요청)
+            영상 전용 단일 이동(➡️) 버튼을 없애고, 항목별 메뉴(복사·삭제·이동·잘라내기)를 여는
+            버튼(⋯)으로 바꿨다 — 우클릭 컨텍스트 메뉴와 동일한 openContextMenu()를 그대로 재사용해
+            메뉴 목록이 하나로 유지된다. */}
+        {!isFolder && deletingId === node.id && (
+          <span className="tf-row-actions tf-confirm-row">
+            <span className="tf-confirm-text">
+              휴지통으로 이동할까요?
+              {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
+            </span>
+            <button className="tf-btn tf-btn-danger-outline" onClick={() => confirmDelete(node.id)}>
+              삭제
+            </button>
+            <button className="tf-btn tf-btn-icon" onClick={() => setDeletingId(null)}>
+              취소
+            </button>
+          </span>
+        )}
+        {!isFolder && deletingId !== node.id && (
           <span className="tf-row-actions">
             <button
               className="tf-btn tf-btn-icon"
-              onClick={() => setMoveDialogIds([node.id])}
-              title="다른 폴더로 이동"
-              aria-label={`"${node.name}" 다른 폴더로 이동`}
+              onClick={(e) => openContextMenu(e, node.id)}
+              title="복사·삭제·이동·잘라내기"
+              aria-label={`"${node.name}" 작업 메뉴 열기`}
             >
-              ➡️
+              ⋯
             </button>
           </span>
         )}
@@ -2571,7 +2642,7 @@ export default function App() {
           {currentFolderId === store.trashId ? null : bulkTrashConfirming ? (
             <span className="tf-confirm-row">
               <span className="tf-confirm-text">
-                {selectedFolderIds.length}개 항목을 휴지통으로 이동할까요?
+                {selectedIds.size}개 항목을 휴지통으로 이동할까요?
                 {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
               </span>
               <button className="tf-btn tf-btn-danger-outline" onClick={handleBulkTrash}>
@@ -2582,9 +2653,9 @@ export default function App() {
               </button>
             </span>
           ) : (
-            selectedFolderIds.length > 0 && (
+            selectedIds.size > 0 && (
               <button className="tf-btn tf-btn-danger-outline" onClick={() => setBulkTrashConfirming(true)}>
-                🗑 일괄 휴지통 이동 ({selectedFolderIds.length}개)
+                🗑 일괄 휴지통 이동 ({selectedIds.size}개)
               </button>
             )
           )}
@@ -2635,7 +2706,12 @@ export default function App() {
                       const isTrash = node.id === store.trashId;
                       const isFolder = node.type === 'folder';
                       return (
-                        <div key={node.id} className="tf-tile" onContextMenu={(e) => openContextMenu(e, node.id)}>
+                        <div
+                          key={node.id}
+                          className="tf-tile"
+                          onContextMenu={(e) => openContextMenu(e, node.id)}
+                          onClickCapture={(e) => handleRowClickCapture(e, node.id)}
+                        >
                           {renderTileBody(node, isTrash, isFolder, store)}
                         </div>
                       );
@@ -2681,6 +2757,7 @@ export default function App() {
                       className="tf-vtable-row"
                       style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vItem.start}px)` }}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
+                      onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                     >
                       <div className="tf-vtable-cell tf-trow-handle-cell" />
                       <div className="tf-vtable-cell tf-tcell-name">{c.name}</div>
@@ -2708,6 +2785,7 @@ export default function App() {
                     className="tf-row"
                     style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vItem.start}px)` }}
                     onContextMenu={(e) => openContextMenu(e, node.id)}
+                    onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                   >
                     {renderRowBody(node, isTrash, isFolder, store)}
                   </li>
@@ -2743,6 +2821,7 @@ export default function App() {
                       coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
                       dragHandleLabel={`"${node.name}" 드래그로 이동`}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
+                      onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                     >
                       {(dragProps) => renderTileBody(node, isTrash, isFolder, store, dragProps)}
                     </SortableGridItem>
@@ -2811,6 +2890,7 @@ export default function App() {
                         coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
                         dragHandleLabel={`"${node.name}" 드래그로 이동`}
                         onContextMenu={(e) => openContextMenu(e, node.id)}
+                        onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                       >
                         {(dragProps) => {
                           const c = tableCells(node, isTrash, isFolder, store, dragProps);
@@ -2855,6 +2935,7 @@ export default function App() {
                       coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
                       dragHandleLabel={`"${node.name}" 드래그로 이동`}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
+                      onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                     >
                       {(dragProps) => renderRowBody(node, isTrash, isFolder, store, dragProps)}
                     </SortableRow>
@@ -2897,15 +2978,24 @@ export default function App() {
             className="tf-context-menu"
             style={{
               left: Math.min(contextMenu.x, window.innerWidth - 168),
-              top: Math.min(contextMenu.y, window.innerHeight - 132)
+              top: Math.min(contextMenu.y, window.innerHeight - 196)
             }}
             onClick={(e) => e.stopPropagation()}
             role="menu"
           >
+            {/* 항목(폴더/영상) 위에서 열렸을 때만 복사/삭제/이동/잘라내기 노출 — 빈 공간 우클릭이나
+                영상 행의 새 메뉴 버튼(⋯)에서도 항상 forNode=true로 열리므로 동일하게 보인다.
+                순서는 산들 요청 원문 그대로: 복사, 삭제, 이동, 잘라내기(2026-09-08). */}
             {contextMenu.forNode && (
               <>
                 <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleCopy}>
                   복사
+                </button>
+                <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleMenuDelete}>
+                  삭제
+                </button>
+                <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleMenuMove}>
+                  이동
                 </button>
                 <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleCut}>
                   잘라내기
@@ -2976,7 +3066,7 @@ export default function App() {
           >
             <h2 id="tf-trashinfo-title">🗑️ 휴지통으로 이동</h2>
             <p className="tf-sync-desc">
-              "{store.nodes[trashInfoModalFolderId]?.name}" 폴더를 휴지통으로 옮깁니다. 휴지통에 있는 항목은 설정된 보관
+              "{store.nodes[trashInfoModalFolderId]?.name}" 항목을 휴지통으로 옮깁니다. 휴지통에 있는 항목은 설정된 보관
               기간이 지나면 자동으로 완전히 삭제됩니다(되돌릴 수 없음).
             </p>
             <p className="tf-sync-fineprint">
