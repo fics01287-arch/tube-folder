@@ -87,7 +87,16 @@ function extractFromContents(contents: JsonNode[] | undefined): { videos: Playli
       const v = parseVideoRenderer(item.playlistVideoRenderer);
       if (v) videos.push(v);
     } else if (item.continuationItemRenderer) {
+      // 옛 형식 — 대부분의 재생목록에서 여전히 이 형식을 씀
       continuation = item.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token || null;
+    } else if (item.continuationItemViewModel) {
+      // 새 형식(2026-09-07 발견, 179개짜리 재생목록에서 100개 이후 멈추는 문제의 원인) — YouTube가
+      // 일부 재생목록 탭 응답에서 이어받기 토큰을 continuationItemRenderer 대신 이 구조로 내려주기
+      // 시작함. yt-dlp가 동일 증상(100~200개에서 멈춤)을 겪고 낸 수정(yt-dlp PR #16948, 2026-09)에서
+      // 정확한 경로를 확인해 그대로 반영: continuationItemViewModel.continuationCommand.innertubeCommand가
+      // 옛 형식의 continuationEndpoint에 해당하는 위치이고, 그 안의 continuationCommand.token은 동일.
+      continuation =
+        item.continuationItemViewModel?.continuationCommand?.innertubeCommand?.continuationCommand?.token || null;
     }
   }
   return { videos, continuation };
@@ -116,12 +125,40 @@ function extractContinuationContents(json: JsonNode): JsonNode[] {
 
 export class PlaylistImportError extends Error {}
 
-/** 재생목록 페이지 HTML을 읽어 영상 목록(videoId·제목·채널)을 가져온다. 비공개/삭제된 목록이면 에러. */
-export async function fetchPlaylistVideos(playlistId: string, onProgress?: ProgressCallback): Promise<PlaylistVideo[]> {
+/** 재생목록 헤더에서 제목을 뽑는다. YouTube가 두 가지 위치 중 하나에 넣어와서 순서대로 시도하고,
+ * 구조가 또 바뀌어 둘 다 실패해도(관용적 실패 정책) 예외 대신 안내용 기본값을 반환한다. */
+function extractPlaylistTitle(ytInitialData: JsonNode): string {
+  const metaTitle = ytInitialData?.metadata?.playlistMetadataRenderer?.title;
+  if (typeof metaTitle === 'string' && metaTitle.trim()) return metaTitle.trim();
+  const headerTitle = textOf(ytInitialData?.header?.playlistHeaderRenderer?.title);
+  if (headerTitle.trim()) return headerTitle.trim();
+  return '가져온 재생목록';
+}
+
+export interface PlaylistFetchResult {
+  title: string;
+  videos: PlaylistVideo[];
+  /** 100개 초과 재생목록에서 일부만 가져와지는 문제(2026-09-07 최초 발견) 진단용 임시 필드 —
+   * 서비스워커 콘솔이 타이밍 문제로 못 잡는 경우가 있어, 원인 확정 전까지는 호출부가 이 배열을
+   * 화면(팝업)에 그대로 보여줄 수 있게 반환값에 포함시켰다. 원인 확정 후 제거 예정. */
+  debug: string[];
+}
+
+/**
+ * fetchPlaylistVideos(공개용, credentials 'omit')와 fetchPlaylistWithAuth(비공개용, credentials
+ * 'include') 둘 다 이 내부 함수를 공유한다 — continuation 페이지네이션·파싱 로직이 완전히 같고
+ * 자격증명 포함 여부와 반환 형태(제목 포함/미포함)만 다르기 때문에, 로직을 복제하는 대신
+ * 인증 여부를 매개변수로 받는 공용 코어로 분리했다.
+ */
+async function fetchPlaylistCore(
+  playlistId: string,
+  credentials: RequestCredentials,
+  onProgress?: ProgressCallback
+): Promise<PlaylistFetchResult> {
   let pageRes: Response;
   try {
     pageRes = await fetch(youtubeUrl.playlist(playlistId), {
-      credentials: 'omit'
+      credentials
     });
   } catch {
     throw new PlaylistImportError('재생목록 페이지에 접속하지 못했습니다. 인터넷 연결을 확인해 주세요.');
@@ -143,6 +180,9 @@ export async function fetchPlaylistVideos(playlistId: string, onProgress?: Progr
     throw new PlaylistImportError('재생목록 데이터 형식을 해석하지 못했습니다.');
   }
 
+  const title = extractPlaylistTitle(initialData);
+  const debug: string[] = [];
+
   const seen = new Set<string>();
   const all: PlaylistVideo[] = [];
   const first = extractFromContents(extractInitialContents(initialData));
@@ -153,11 +193,13 @@ export async function fetchPlaylistVideos(playlistId: string, onProgress?: Progr
     }
   }
   onProgress?.({ fetched: all.length });
+  debug.push(`1p:${first.videos.length}개,cont=${first.continuation ? 'Y' : 'N'}`);
 
   let continuation = first.continuation;
   if (continuation) {
     const apiKeyMatch = html.match(youtubePattern.innertubeApiKey);
     const clientVersionMatch = html.match(youtubePattern.innertubeClientVersion);
+    debug.push(`key=${apiKeyMatch ? 'Y' : 'N'},ver=${clientVersionMatch ? 'Y' : 'N'}`);
 
     if (apiKeyMatch && clientVersionMatch) {
       const apiKey = apiKeyMatch[1];
@@ -166,25 +208,45 @@ export async function fetchPlaylistVideos(playlistId: string, onProgress?: Progr
 
       while (continuation && page < MAX_CONTINUATION_PAGES) {
         page++;
-        const res = await fetch(youtubeUrl.browseApi(apiKey), {
-          method: 'POST',
-          credentials: 'omit',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            context: { client: { clientName: 'WEB', clientVersion } },
-            continuation
-          })
-        });
-        if (!res.ok) break;
+        let res: Response;
+        try {
+          res = await fetch(youtubeUrl.browseApi(apiKey), {
+            method: 'POST',
+            credentials,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              context: { client: { clientName: 'WEB', clientVersion } },
+              continuation
+            })
+          });
+        } catch (e) {
+          const msg = `${page}p:fetch실패 ${e instanceof Error ? e.message : String(e)}`;
+          console.warn('[튜브폴더] 재생목록 이어받기 fetch 실패(네트워크):', page, e);
+          debug.push(msg);
+          break;
+        }
+        if (!res.ok) {
+          const msg = `${page}p:응답실패 ${res.status} ${res.statusText}`;
+          console.warn('[튜브폴더] 재생목록 이어받기 응답 실패:', page, res.status, res.statusText);
+          debug.push(msg);
+          break;
+        }
 
         let json: JsonNode;
         try {
           json = await res.json();
-        } catch {
+        } catch (e) {
+          const msg = `${page}p:JSON파싱실패`;
+          console.warn('[튜브폴더] 재생목록 이어받기 응답 파싱 실패:', page, e);
+          debug.push(msg);
           break;
         }
 
         const next = extractFromContents(extractContinuationContents(json));
+        if (next.videos.length === 0 && !next.continuation) {
+          console.warn('[튜브폴더] 재생목록 이어받기 응답에서 영상을 못 찾음(구조 변경 의심):', page, JSON.stringify(json).slice(0, 500));
+          debug.push(`${page}p:응답에 영상 0개(구조변경 의심) rawlen=${JSON.stringify(json).length}`);
+        }
         for (const v of next.videos) {
           if (!seen.has(v.videoId)) {
             seen.add(v.videoId);
@@ -192,6 +254,7 @@ export async function fetchPlaylistVideos(playlistId: string, onProgress?: Progr
           }
         }
         onProgress?.({ fetched: all.length });
+        debug.push(`${page}p:${next.videos.length}개,cont=${next.continuation ? 'Y' : 'N'}`);
         continuation = next.continuation;
       }
     }
@@ -203,5 +266,24 @@ export async function fetchPlaylistVideos(playlistId: string, onProgress?: Progr
     throw new PlaylistImportError('재생목록에서 영상을 찾지 못했습니다.');
   }
 
-  return all;
+  return { title, videos: all, debug };
+}
+
+/** 공개/미등록(unlisted) 재생목록 가져오기 — 매니저 탭의 기존 "재생목록 가져오기" 입력창이 사용.
+ * 의도적으로 비인증(credentials 'omit')이라 비공개 재생목록은 못 읽는다(로그인 여부와 무관하게
+ * 항상 같은 결과를 내는 게 이 앱의 원래 설계 — 확장 설치만으로 별도 인증 절차 없이 동작해야 함). */
+export async function fetchPlaylistVideos(playlistId: string, onProgress?: ProgressCallback): Promise<PlaylistVideo[]> {
+  const result = await fetchPlaylistCore(playlistId, 'omit', onProgress);
+  return result.videos;
+}
+
+/**
+ * 비공개 재생목록 가져오기 — background.ts의 우클릭 메뉴("이 재생목록 가져오기")에서만 사용.
+ * credentials 'include'로 호출해야 하고, 이게 실제로 로그인 쿠키를 실어 보내려면 호출부가
+ * manifest.json의 host_permissions(youtube.com)를 이미 가진 컨텍스트(서비스워커)여야 한다 —
+ * content script나 매니저 탭(별도 오리진)에서 부르면 안 됨. 반환값에 제목을 함께 담는 이유:
+ * 호출부(background.ts)가 이 제목을 그대로 새 폴더 이름 제안값으로 content script에 넘기기 때문.
+ */
+export async function fetchPlaylistWithAuth(playlistId: string, onProgress?: ProgressCallback): Promise<PlaylistFetchResult> {
+  return fetchPlaylistCore(playlistId, 'include', onProgress);
 }

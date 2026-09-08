@@ -8,8 +8,10 @@
 
 import { addVideoToFolder, extractVideoId, fetchDuration, fetchMeta, load, STORAGE_KEY } from '../storage/storage';
 import { folderChildren } from '../storage/folderOps';
+import { extractPlaylistId } from '../storage/playlistImport';
+import { fetchPlaylistViaDataApi, YoutubeApiError } from '../storage/youtubeDataApi';
 import type { TubeStoreData } from '../storage/types';
-import type { ContentToBackgroundMessage } from '../shared/messages';
+import type { ContentToBackgroundMessage, FetchPlaylistDataApiResponse } from '../shared/messages';
 import { MUSIC_HOST_MARKER, YOUTUBE_DOCUMENT_PATTERNS } from '../shared/youtubeSelectors';
 import * as syncEngine from '../sync/syncEngine';
 import {
@@ -24,6 +26,13 @@ import {
 
 const MANAGER = 'index.html';
 const CONTEXTS: chrome.contextMenus.ContextType[] = ['page', 'link'];
+// 재생목록 썸네일 카드는 이미지·비디오 배지·삼점 메뉴 등이 겹겹이 얹힌 복잡한 구조라, 우클릭한
+// 정확한 지점에 따라 Chrome이 'link'가 아니라 'image'/'video' 컨텍스트로 판단할 수 있음(둘 다
+// 같은 <a> 안에 있어도) — 그러면 contexts:['page','link']만으로는 메뉴 자체가 안 뜬다(산들이
+// 재생목록 개요 페이지 썸네일에서 우클릭했을 때 메뉴가 안 보인 문제의 원인으로 추정). 이 항목만
+// 컨텍스트를 넓혀서 어디를 클릭하든 뜨게 하고, 실제 재생목록 여부는 기존처럼 클릭 시점에
+// extractPlaylistId로 검증(정상적인 링크가 아니면 배지로 실패 안내)한다.
+const PLAYLIST_MENU_CONTEXTS: chrome.contextMenus.ContextType[] = ['page', 'link', 'image', 'video'];
 
 function noop(): void {
   if (chrome.runtime.lastError) {
@@ -50,7 +59,13 @@ async function rebuildFolderMenus(): Promise<void> {
       createMenu({ id: 'tf-root', title: '📁 튜브폴더에 추가' });
       buildAddVideoSubMenus(store, store.rootId, 'tf-root', 0);
 
-      // ② 폴더 관리
+      // ② 재생목록 가져오기 — 비공개 재생목록도 지원(로그인 쿠키를 실어 보내는 인증된 fetch,
+      // ARCHITECTURE 원칙: 이 메뉴는 항상 보이고(documentUrlPatterns가 list= 쿼리 유무를
+      // 필터링할 수 없어서), 실제 재생목록 여부는 클릭 시점에 extractPlaylistId로 검증한다.
+      createMenu({ id: 'tf-import-sep', type: 'separator', contexts: PLAYLIST_MENU_CONTEXTS });
+      createMenu({ id: 'tf-import-playlist', title: '🎵 이 재생목록 가져오기', contexts: PLAYLIST_MENU_CONTEXTS });
+
+      // ③ 폴더 관리
       createMenu({ id: 'tf-manage-sep', type: 'separator' });
       createMenu({ id: 'tf-manage', title: '🗂️ 폴더 관리' });
 
@@ -179,12 +194,26 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === LICENSE_ALARM) refreshLicense();
 });
 
+// 확장을 새로고침(chrome://extensions ⟳)해도 이미 열려 있던 유튜브 탭에 심어진 콘텐츠 스크립트는
+// 자동으로 안 바뀐다(MV3 공통 제약 — content_scripts는 새 페이지 로드 시점에만 주입됨). 개발 중
+// "탭도 같이 새로고침해야 한다"를 매번 안내해야 했던 마찰(2026-09-07, 재생목록 가져오기 디버깅
+// 과정에서 반복 발견)을 없애기 위해, 확장이 설치/업데이트될 때 열려있는 유튜브 탭을 자동으로
+// 새로고침한다.
+function reloadYoutubeTabs(): void {
+  chrome.tabs.query({ url: YOUTUBE_DOCUMENT_PATTERNS }, (tabs) => {
+    for (const t of tabs) {
+      if (t.id != null) chrome.tabs.reload(t.id);
+    }
+  });
+}
+
 // ── 이벤트 리스너 (최상위 동기 등록) ──────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
   rebuildFolderMenus();
   ensureSyncAlarm();
   ensureLicenseAlarm();
   refreshLicense(); // 최초 실행 시 1회 온라인 확인
+  reloadYoutubeTabs();
 });
 chrome.runtime.onStartup.addListener(() => {
   rebuildFolderMenus();
@@ -208,10 +237,32 @@ chrome.action.onClicked.addListener(async () => {
   await openManager();
 });
 
-chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage) => {
+chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
   if (message && message.type === 'TF_FLASH_BADGE') {
     flashBadge(message.text, message.color);
+    return undefined; // 동기 처리 — 응답 없음
   }
+
+  if (message && message.type === 'TF_FETCH_PLAYLIST_DATA_API') {
+    // chrome.identity는 콘텐츠 스크립트에 없어 여기(서비스워커)에서 토큰 발급부터 fetch까지
+    // 전부 처리한 뒤 결과만 돌려준다 — youtubeDataApi.ts 상단 주석 참고. MV3 규칙상 비동기
+    // 응답을 쓰려면 리스너가 true를 반환해야 sendResponse를 나중에 불러도 유효하다.
+    fetchPlaylistViaDataApi(message.playlistId)
+      .then((result) => {
+        const response: FetchPlaylistDataApiResponse = { ok: true, title: result.title, videos: result.videos };
+        sendResponse(response);
+      })
+      .catch((e) => {
+        const response: FetchPlaylistDataApiResponse =
+          e instanceof YoutubeApiError
+            ? { ok: false, code: e.code, message: e.message }
+            : { ok: false, code: 'other', message: e instanceof Error ? e.message : String(e) };
+        sendResponse(response);
+      });
+    return true;
+  }
+
+  return undefined;
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -225,6 +276,29 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (itemId === 'tf-new-folder') {
     const store = await load();
     sendPromptToTab(tab, { type: 'TF_SHOW_FOLDER_PROMPT', mode: 'new-folder', parentId: store.rootId });
+    return;
+  }
+
+  if (itemId === 'tf-import-playlist') {
+    const url = info.linkUrl || info.pageUrl || (tab && tab.url) || '';
+    const playlistId = extractPlaylistId(url);
+    if (!playlistId) {
+      // list= 파라미터가 없는 일반 페이지에서 클릭한 경우 — 메뉴를 항상 보여주는 대신
+      // 여기서 조용히 실패를 알린다(folder_ 핸들러의 videoId 미검출 처리와 동일한 방식).
+      flashBadge('!', '#cc0000');
+      return;
+    }
+    // 실제 fetch(인증 헤더 포함 이어받기)는 여기서 하지 않는다 — ShowFolderPromptMessage.playlistId
+    // 주석 참고: background(서비스워커)의 오리진에서는 비공개 재생목록 이어받기가 403으로 거부됨을
+    // 실측 확인해, content script(유튜브 페이지, 진짜 same-origin)에 id만 넘기고 fetch는 그쪽이 한다.
+    const store = await load();
+    sendPromptToTab(tab, {
+      type: 'TF_SHOW_FOLDER_PROMPT',
+      mode: 'import-playlist',
+      parentId: store.rootId,
+      playlistId,
+      playlistKind: url.indexOf(MUSIC_HOST_MARKER) >= 0 ? 'music' : 'video'
+    });
     return;
   }
 

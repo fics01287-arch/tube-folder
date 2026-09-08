@@ -24,6 +24,10 @@ export interface ApprovedLicense {
 }
 
 export const APPROVED_LICENSES: ApprovedLicense[] = [
-  // 예시(비활성 — 실제 이메일이 아니라 아래 조건과 일치하지 않으므로 검증을 통과하지 않음):
-  // { key: 'TF-EXAMPLE-0000', email: 'friend@example.com', note: '지인 테스트용' },
+  // 산들 본인 개발자 테스트 계정 — 2026-09-07, 재생목록 가져오기 기능을 실제 계정으로 반복
+  // 테스트하다 무료 티어 영상 한도(150개)에 걸려 이후 가져오기가 전부 조용히 실패하는 문제를
+  // 발견한 것을 계기로 추가(대화 참고). 개발 중에는 이 한도에 계속 막히면 테스트 자체가
+  // 불가능하므로, 산들 본인 계정만 화이트리스트로 무제한 처리한다 — 다른 사용자에게 배포되는
+  // 빌드의 무료 티어 정책 자체는 그대로 유지.
+  { key: 'TF-SANDEUL-DEV-0001', email: 'fics01287@gmail.com', note: '산들 본인 — 개발/테스트용' }
 ];

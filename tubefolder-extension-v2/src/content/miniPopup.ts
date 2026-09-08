@@ -8,6 +8,13 @@ export interface MiniPopupOptions {
   mode: MiniPopupMode;
   title: string;
   message?: string;
+  /**
+   * 본문(message)과 별도로, 한 단계 옅은 톤으로 보여주는 부가 안내문(신설 2026-09-08).
+   * "재생목록 가져오기 실행 시 표시 개수와 실제 개수가 다를 수 있음을 매번 알림" 요청 반영 —
+   * 특정 상황에서만 뜨는 경고가 아니라, 해당 동작을 실행할 때마다 항상 보여주는 일반 안내문 용도라
+   * message와 스타일을 분리했다(강조하되 본문만큼 시선을 끌지 않도록).
+   */
+  note?: string;
   initialValue?: string;
   confirmLabel?: string;
   cancelLabel?: string;
@@ -34,6 +41,7 @@ const CSS = `
   }
   .tf-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
   .tf-message { font-size: 13px; line-height: 1.5; color: #444; margin-bottom: 12px; }
+  .tf-note { font-size: 11px; line-height: 1.45; color: #888; margin: -6px 0 12px; }
   .tf-input {
     width: 100%; box-sizing: border-box; font-size: 14px;
     padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px;
@@ -108,6 +116,13 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
     messageEl.className = 'tf-message';
     messageEl.textContent = opts.message;
     box.appendChild(messageEl);
+  }
+
+  if (opts.note) {
+    const noteEl = document.createElement('div');
+    noteEl.className = 'tf-note';
+    noteEl.textContent = opts.note;
+    box.appendChild(noteEl);
   }
 
   let input: HTMLInputElement | null = null;

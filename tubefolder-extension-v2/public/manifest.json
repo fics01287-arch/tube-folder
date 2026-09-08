@@ -3,12 +3,14 @@
   "name": "튜브폴더 (TubeFolder) v2",
   "version": "2.0.0",
   "description": "유튜브 동영상·뮤직을 내 컴퓨터 탐색기처럼 무제한 폴더로 정리합니다.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzsBkHMRSuWzjDN1Y7U1787kjiMsKsCXsvS3wd8oQHiv5skoyqYfmhcjKo8zUGGiMwtjlbd/XGfDGGMwHbHNJs/5tVIJZjebw04HMsOFdZDgOqtlpIPeGcD0ABZHteuoFLAa7+XO3B/NSpZRZjl+1AKyQy8eN2y0p2M8xpc9fZ2aCRqBeiJd/v0z3sAtE8Etckeys/PoxEhdtC+w1IRvvwA6PMnK+gpsFn6UOl8uhruHZMZzeqNbxe2siUY7ZFaXypGOhzqX7mn/VSdYb7u5hH5M73bA5FYgiLcIl4l7XRxi33CNDOg8wTEZ31qhkW0cC7UTlmAYZN94XxROhgNZBGQIDAQAB",
   "permissions": ["storage", "contextMenus", "tabs", "unlimitedStorage", "identity", "alarms"],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://music.youtube.com/*",
     "https://youtu.be/*",
-    "https://noembed.com/*"
+    "https://noembed.com/*",
+    "https://www.googleapis.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -39,7 +41,10 @@
     "128": "icons/icon128.png"
   },
   "oauth2": {
-    "client_id": "864997495294-jugt44j4il53kjcr5m982n0cflfp1252.apps.googleusercontent.com",
-    "scopes": ["https://www.googleapis.com/auth/drive.appdata"]
+    "client_id": "591469875277-97ades3p125dvc3rtndi50vlgiinj6dn.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.appdata",
+      "https://www.googleapis.com/auth/youtube.readonly"
+    ]
   }
 }
