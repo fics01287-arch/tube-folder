@@ -1580,6 +1580,16 @@ export default function App() {
     }
   }
 
+  // (2026-09-08, "오류 152-4" 원인 확정 반영) 확장 페이지 내부에 iframe으로 유튜브를 직접 재생하던
+  // 방식(PlayerOverlay)을 껐다 — 원인은 우리 코드가 아니라 유튜브 임베드 플레이어 자체의 현재 진행형
+  // 플랫폼 이슈였다(오류 152-4가 우리 확장·일반 웹사이트·전혀 다른 브라우저 어디서나 똑같이 재현되고,
+  // 유튜브 공식 oEmbed API로는 영상들이 "임베드 가능"으로 확인됨 — 즉 영상·확장 문제가 아니라 유튜브
+  // 임베드 플레이어 쪽 문제). 버전1(v1)이 "잘 됐던" 이유도 같은 결론을 뒷받침한다 — v1은 애초에 iframe
+  // 임베드를 쓴 적이 없고, 영상 클릭 시 항상 window.open()으로 진짜 유튜브 탭을 새로 열었을 뿐이다
+  // (app.js: `window.open(n.url,'_blank')`). 그래서 v2도 이 방식으로 되돌린다 — 임베드가 언제 고쳐질지
+  // 알 수 없는 유튜브 쪽 문제라, 우리가 통제 가능한 유일한 안정적 재생 경로는 실제 유튜브 탭을 여는 것.
+  // 이어보기 위치(lastPosition)는 새 탭 안에서는 우리가 관찰할 수 없어 재생 중 자동 저장은 더 이상 안
+  // 되지만, 마지막으로 저장돼있던 위치는 watch URL의 t= 파라미터로 그대로 살려서 이어서 볼 수 있게 한다.
   function handleVideoClick(node: TubeNode) {
     setError(null);
     if (!isVideo(node)) return;
@@ -1587,7 +1597,9 @@ export default function App() {
       setError('이 영상은 재생할 수 없습니다 (videoId를 확인할 수 없음).');
       return;
     }
-    setPlayingVideo(node);
+    const resumeAt = node.lastPosition && node.lastPosition > 0 ? Math.floor(node.lastPosition) : 0;
+    const url = resumeAt > 0 ? `${youtubeUrl.watch(node.videoId)}&t=${resumeAt}s` : youtubeUrl.watch(node.videoId);
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   async function handleClosePlayer() {
