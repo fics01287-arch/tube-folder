@@ -60,6 +60,86 @@ export async function getDeviceId(): Promise<string> {
   }
 }
 
+// (2026-09-09, "'이 재생목록 가져오기' 할 때도 새 폴더/현재 폴더/다른 폴더를 선택하게 해달라"
+// 요청 — 유튜브 페이지 우클릭 메뉴에는 매니저 탭의 currentFolderId 같은 "지금 보고 있는 폴더"
+// 개념이 원래 없어서, "현재 폴더"를 무엇으로 볼지 정의가 필요했다. 산들과 상의해 정한 우선순위:
+// ①직전에 재생목록을 가져왔던 폴더 → ②매니저 탭에 지금 열려있는 폴더 → ③(둘 다 없으면) 최상위
+// 폴더. 두 값 모두 tubefolder_v1(TubeStoreData) 본체가 아니라 별도 키로 chrome.storage.local에
+// device-id와 같은 패턴으로 저장한다 — 이 값들은 동기화 대상도 아니고 기기마다 달라도 무방한
+// "이 브라우저에서 마지막으로 뭘 하고 있었는지" 성격의 로컬 전용 상태이기 때문.
+const LAST_IMPORT_FOLDER_KEY = 'tubefolder_last_import_folder_id';
+const OPEN_FOLDER_KEY = 'tubefolder_open_folder_id';
+
+/** 마지막으로 재생목록을 가져온(성공적으로 완료된) 폴더 id. 없으면 null. */
+export async function getLastImportFolderId(): Promise<string | null> {
+  if (hasChromeStorage()) {
+    const o = await chrome.storage.local.get(LAST_IMPORT_FOLDER_KEY);
+    return (o[LAST_IMPORT_FOLDER_KEY] as string | undefined) ?? null;
+  }
+  try {
+    return localStorage.getItem(LAST_IMPORT_FOLDER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** 재생목록 가져오기가 (부분 성공 포함) 완료될 때마다 대상 폴더를 기록해둔다. */
+export async function setLastImportFolderId(id: string): Promise<void> {
+  if (hasChromeStorage()) {
+    await chrome.storage.local.set({ [LAST_IMPORT_FOLDER_KEY]: id });
+    return;
+  }
+  try {
+    localStorage.setItem(LAST_IMPORT_FOLDER_KEY, id);
+  } catch {
+    // 프리뷰 환경 등에서 실패해도 치명적이지 않으므로 조용히 무시
+  }
+}
+
+/** 매니저 탭에서 지금 열려있는(마지막으로 열었던) 폴더 id. 매니저 탭이 한 번도 없었으면 null. */
+export async function getOpenFolderId(): Promise<string | null> {
+  if (hasChromeStorage()) {
+    const o = await chrome.storage.local.get(OPEN_FOLDER_KEY);
+    return (o[OPEN_FOLDER_KEY] as string | undefined) ?? null;
+  }
+  try {
+    return localStorage.getItem(OPEN_FOLDER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** 매니저 탭의 currentFolderId가 바뀔 때마다 호출해 갱신한다. */
+export async function setOpenFolderId(id: string | null): Promise<void> {
+  if (hasChromeStorage()) {
+    if (id) await chrome.storage.local.set({ [OPEN_FOLDER_KEY]: id });
+    else await chrome.storage.local.remove(OPEN_FOLDER_KEY);
+    return;
+  }
+  try {
+    if (id) localStorage.setItem(OPEN_FOLDER_KEY, id);
+    else localStorage.removeItem(OPEN_FOLDER_KEY);
+  } catch {
+    // 무시(위와 동일한 이유)
+  }
+}
+
+/**
+ * "이 재생목록 가져오기"(content.ts, 유튜브 페이지 우클릭)에서 쓸 "현재 폴더"를 우선순위대로
+ * 계산한다. 후보가 가리키는 폴더가 이미 삭제됐거나 휴지통으로 이동했으면 건너뛰고 다음
+ * 우선순위로 넘어가며, 최종적으로 항상 유효한 폴더 id(최악의 경우 rootId)를 반환한다.
+ */
+export function resolveCurrentFolderId(data: TubeStoreData, lastImportFolderId: string | null, openFolderId: string | null): string {
+  const isValidTarget = (id: string | null): id is string => {
+    if (!id) return false;
+    const n = data.nodes[id];
+    return !!n && n.type === 'folder' && id !== data.trashId;
+  };
+  if (isValidTarget(lastImportFolderId)) return lastImportFolderId;
+  if (isValidTarget(openFolderId)) return openFolderId;
+  return data.rootId;
+}
+
 /** 새 노드 생성 시 채워 넣을 스키마·동기화 메타데이터(신규 노드는 항상 version 1부터 시작) */
 export async function newNodeMeta(): Promise<{ schemaVersion: number; deviceId: string; version: number }> {
   return { schemaVersion: DATA_VERSION, deviceId: await getDeviceId(), version: 1 };

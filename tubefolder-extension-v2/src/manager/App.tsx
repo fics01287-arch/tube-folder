@@ -15,7 +15,7 @@ import type { CollisionDetection, DragEndEvent, DragMoveEvent, DragStartEvent } 
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { load, save, STORAGE_KEY } from '../storage/storage';
+import { load, save, STORAGE_KEY, setOpenFolderId, setLastImportFolderId } from '../storage/storage';
 import {
   addVideosToFolder,
   createFolder,
@@ -633,6 +633,17 @@ export default function App() {
     setSelectAnchorId(null);
     setBulkTrashConfirming(false);
     setDeleteConfirmPos(null);
+  }, [currentFolderId]);
+
+  // (2026-09-09, "'이 재생목록 가져오기' 할 때도 새 폴더/현재 폴더/다른 폴더를 선택하게 해달라"
+  // 요청) 유튜브 페이지 우클릭 메뉴(content.ts)에는 이 매니저 탭 같은 "지금 보고 있는 폴더"
+  // 개념이 원래 없어서, "매니저 탭에 지금 열려있는 폴더"를 그쪽에서도 참고할 수 있도록 매번
+  // chrome.storage.local에 별도로 기록해둔다(본체 데이터와는 무관한 로컬 전용 상태 —
+  // storage.ts의 resolveCurrentFolderId 참고). 휴지통 탭에 있을 때도 그대로 기록하지만, 실제
+  // 사용 시점(resolveCurrentFolderId)에서 휴지통이면 무시하고 다음 우선순위로 넘어가므로 여기서
+  // 따로 걸러낼 필요는 없다.
+  useEffect(() => {
+    if (currentFolderId) setOpenFolderId(currentFolderId).catch(() => {});
   }, [currentFolderId]);
 
   // 실제 "사용자가 다른 폴더를 열었다"에 해당하는 지점(목록/그리드/표에서 폴더 열기, breadcrumb
@@ -1819,6 +1830,12 @@ export default function App() {
         })),
         { skipDuplicateCheck: true }
       );
+
+      // (2026-09-09, "'이 재생목록 가져오기'도 새 폴더/현재 폴더/다른 폴더를 선택하게 해달라"
+      // 요청으로 새로 생긴 "현재 폴더"의 1순위가 "직전에 가져왔던 폴더"라 — 실제로 어느 목적지를
+      // 골랐든(새 폴더/현재 폴더/다른 폴더) 완료 시점에 항상 갱신해둔다. 전부 중복이라
+      // result.added===0이어도 "이 폴더로 가져오기를 시도했다"는 사실 자체는 유효하므로 기록한다.
+      await setLastImportFolderId(folderId);
 
       // addVideosToFolder()는 실제로 추가된 게 하나라도 있을 때만 저장한다(전부 건너뛴 경우
       // 저장 자체가 없으니 스냅샷도 그대로 유효 — added===0이면 스택에 쌓을 것도 없음).

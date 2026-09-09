@@ -6,7 +6,13 @@
 // 결과를 팝업으로 보여주고, 원하면 중복 목록도 보여줘" 요청으로 'list' 모드 신설) 'list'는
 // 입력창 대신 스크롤 가능한 목록(items)을 보여주는 단순 알림용 — 제외된 중복 파일 이름처럼
 // 여러 줄을 보여줘야 할 때 쓴다.
-export type MiniPopupMode = 'prompt' | 'confirm' | 'list';
+// (2026-09-09, "'이 재생목록 가져오기' 할 때도 새 폴더/현재 폴더/다른 폴더 중 선택하게 해달라"
+// 요청으로 'choices'·'pick-folder' 모드 신설) 'choices'는 확인/취소 두 버튼이 아니라 각자 다른
+// 동작을 하는 버튼 여러 개를 세로로 나열(매니저 탭의 "새 폴더 만들기"/"현재 폴더에 넣기"/
+// "다른 폴더에 넣기" 3버튼과 같은 역할). 'pick-folder'는 그중 "다른 폴더에 넣기"에서 실제로
+// 폴더 하나를 고르는 목록(매니저 탭의 MoveDialog.tsx와 같은 역할이지만, content script는 React를
+// 안 쓰므로 여기서 vanilla DOM으로 동등하게 구현).
+export type MiniPopupMode = 'prompt' | 'confirm' | 'list' | 'choices' | 'pick-folder';
 
 export interface MiniPopupOptions {
   mode: MiniPopupMode;
@@ -26,6 +32,14 @@ export interface MiniPopupOptions {
   danger?: boolean;
   /** mode:'list' 전용 — 스크롤 목록에 한 줄씩 표시할 항목들. */
   items?: string[];
+  /** mode:'choices' 전용 — 세로로 나열할 선택지 버튼들(각자 다른 동작을 실행, 확인/취소와 별개). */
+  choices?: { id: string; label: string }[];
+  /** mode:'choices' 전용 — 선택지 버튼 클릭 시 호출. 실패(throw)하면 팝업은 유지되고 에러만 보여준다. */
+  onChoice?: (id: string) => Promise<void> | void;
+  /** mode:'pick-folder' 전용 — 들여쓰기 깊이(depth)를 포함한 폴더 목록. */
+  folders?: { id: string; label: string; depth: number }[];
+  /** mode:'pick-folder' 전용 — 폴더 클릭 시 호출. 실패(throw)하면 팝업은 유지되고 에러만 보여준다. */
+  onPickFolder?: (id: string) => Promise<void> | void;
   /**
    * (신설) 취소(cancel) 버튼 자리를 "진짜 취소"가 아니라 제3의 선택지로 쓰고 싶을 때 지정.
    * 있으면 취소 버튼 클릭 시 팝업을 그냥 닫는 대신 이 콜백을 실행한다(confirm 버튼과 동일하게
@@ -36,7 +50,9 @@ export interface MiniPopupOptions {
   onSecondary?: () => Promise<void> | void;
   /** 취소/보조 버튼 자체를 아예 숨긴다(확인 버튼 하나만 있는 단순 알림 팝업용). */
   hideCancel?: boolean;
-  onSubmit: (value: string) => Promise<void> | void;
+  // 'choices'·'pick-folder' 모드는 확인 버튼 자체가 없어(선택 = 실행) onSubmit이 호출될 일이
+  // 없으므로 옵셔널로 둔다. 다른 모드는 여전히 실질적으로 필수로 취급(호출부가 항상 넘김).
+  onSubmit?: (value: string) => Promise<void> | void;
 }
 
 const CSS = `
@@ -84,6 +100,23 @@ const CSS = `
   }
   .tf-dup-list { margin: 0; padding: 8px 8px 8px 24px; font-size: 12px; line-height: 1.6; color: #333; }
   .tf-dup-list li { word-break: break-all; }
+  .tf-choice-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+  .tf-choice-btn {
+    width: 100%; text-align: left; font-size: 13px; font-weight: 600;
+    padding: 10px 14px; border-radius: 8px; border: 1px solid #ddd;
+    background: #fafafa; color: #0f0f0f; cursor: pointer;
+  }
+  .tf-choice-btn:hover { background: #f0f0f0; }
+  .tf-choice-btn:disabled { opacity: 0.6; cursor: default; }
+  .tf-folder-list { list-style: none; margin: 0; padding: 4px; }
+  .tf-folder-list li { margin: 0; }
+  .tf-folder-item {
+    display: block; width: 100%; text-align: left; font-size: 13px;
+    padding: 8px 10px; border: none; border-radius: 6px;
+    background: transparent; color: #0f0f0f; cursor: pointer;
+  }
+  .tf-folder-item:hover { background: #f0f0f0; }
+  .tf-folder-item:disabled { opacity: 0.6; cursor: default; }
 `;
 
 let activeHost: HTMLElement | null = null;
@@ -149,6 +182,9 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
   }
 
   let input: HTMLInputElement | null = null;
+  // 'choices'·'pick-folder' 모드의 선택지/폴더 버튼들 — 하나를 클릭하는 동안(비동기 처리 중)
+  // 나머지도 함께 잠깐 비활성화해 중복 클릭을 막는 용도(아래 setChoicesDisabled에서 일괄 사용).
+  const choiceButtons: HTMLButtonElement[] = [];
   if (opts.mode === 'prompt') {
     input = document.createElement('input');
     input.className = 'tf-input';
@@ -165,6 +201,58 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
       const li = document.createElement('li');
       li.textContent = item;
       ul.appendChild(li);
+    }
+    listWrap.appendChild(ul);
+    box.appendChild(listWrap);
+  } else if (opts.mode === 'choices') {
+    const listWrap = document.createElement('div');
+    listWrap.className = 'tf-choice-list';
+    for (const choice of opts.choices || []) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tf-choice-btn';
+      btn.textContent = choice.label;
+      btn.addEventListener('click', async () => {
+        setChoicesDisabled(true);
+        errorEl.textContent = '';
+        try {
+          await opts.onChoice?.(choice.id);
+          if (activeHost === host) closeMiniPopup();
+        } catch (e) {
+          setChoicesDisabled(false);
+          errorEl.textContent = e instanceof Error ? e.message : String(e);
+        }
+      });
+      listWrap.appendChild(btn);
+      choiceButtons.push(btn);
+    }
+    box.appendChild(listWrap);
+  } else if (opts.mode === 'pick-folder') {
+    const listWrap = document.createElement('div');
+    listWrap.className = 'tf-list-scroll';
+    const ul = document.createElement('ul');
+    ul.className = 'tf-folder-list';
+    for (const folder of opts.folders || []) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tf-folder-item';
+      btn.style.paddingLeft = folder.depth * 16 + 10 + 'px';
+      btn.textContent = folder.label;
+      btn.addEventListener('click', async () => {
+        setChoicesDisabled(true);
+        errorEl.textContent = '';
+        try {
+          await opts.onPickFolder?.(folder.id);
+          if (activeHost === host) closeMiniPopup();
+        } catch (e) {
+          setChoicesDisabled(false);
+          errorEl.textContent = e instanceof Error ? e.message : String(e);
+        }
+      });
+      li.appendChild(btn);
+      ul.appendChild(li);
+      choiceButtons.push(btn);
     }
     listWrap.appendChild(ul);
     box.appendChild(listWrap);
@@ -187,6 +275,11 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
   confirmBtn.className = 'tf-btn tf-btn-confirm' + (opts.danger ? ' tf-btn-danger' : '');
   confirmBtn.textContent = opts.confirmLabel || (opts.mode === 'prompt' ? '만들기' : '확인');
 
+  function setChoicesDisabled(v: boolean): void {
+    for (const b of choiceButtons) b.disabled = v;
+    cancelBtn.disabled = v;
+  }
+
   // 이 특정 showMiniPopup() 호출이 만든 host를 기억해뒀다가, onSubmit/onSecondary가 끝난 뒤
   // "그 사이 다른 팝업으로 안 바뀌었을 때만" 닫는다 — onSubmit/onSecondary 안에서 다음 단계로
   // showMiniPopup()을 또 호출해 팝업을 이어가는 경우(2026-09-09, 재생목록 가져오기 흐름의
@@ -199,7 +292,7 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
     cancelBtn.disabled = true;
     errorEl.textContent = '';
     try {
-      await opts.onSubmit(value);
+      await opts.onSubmit?.(value);
       if (activeHost === host) closeMiniPopup();
     } catch (e) {
       confirmBtn.disabled = false;
@@ -227,10 +320,15 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
     }
   });
 
+  // 'choices'·'pick-folder'는 목록 항목 클릭 자체가 곧 실행이라 별도의 "확인" 버튼이 필요 없다
+  // (선택 = 확정). "취소"만 남겨 그냥 닫을 수 있게 한다.
+  const isSelectionMode = opts.mode === 'choices' || opts.mode === 'pick-folder';
   if (!opts.hideCancel) {
     actions.appendChild(cancelBtn);
   }
-  actions.appendChild(confirmBtn);
+  if (!isSelectionMode) {
+    actions.appendChild(confirmBtn);
+  }
   box.appendChild(actions);
   backdrop.appendChild(box);
   shadow.appendChild(backdrop);
@@ -250,6 +348,8 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
       inputEl.focus();
       inputEl.select();
     }, 0);
+  } else if (isSelectionMode) {
+    setTimeout(() => (choiceButtons[0] || cancelBtn).focus(), 0);
   } else {
     setTimeout(() => confirmBtn.focus(), 0);
   }

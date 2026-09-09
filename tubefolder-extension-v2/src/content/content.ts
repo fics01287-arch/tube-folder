@@ -6,9 +6,11 @@
 import { showMiniPopup } from './miniPopup';
 import { createFolder, renameFolder, trashNode, addVideosToFolder, folderChildren } from '../storage/folderOps';
 import { fetchPlaylistWithAuth, PlaylistImportError } from '../storage/playlistImport';
-import { load } from '../storage/storage';
+import { load, getLastImportFolderId, setLastImportFolderId, getOpenFolderId, resolveCurrentFolderId } from '../storage/storage';
 import { youtubeUrl } from '../shared/youtubeSelectors';
 import { FREE_VIDEO_LIMIT } from '../license/licenseEngine';
+import { DEFAULT_FOLDER_ICON } from '../shared/folderIcons';
+import type { TubeStoreData } from '../storage/types';
 import type { BackgroundToContentMessage, FetchPlaylistDataApiResponse } from '../shared/messages';
 
 function flashBadge(text: string, color: string): void {
@@ -122,16 +124,28 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
         }
       }
 
+      // 재생목록 가져오기를 실행할 때마다 보여주는 일반 안내(2026-09-08 신설, 2026-09-08 공식
+      // API 도입 후 조건부로 변경) — 대형·비공개 재생목록에서 재생목록 자체에 표시된 전체 개수와
+      // 실제로 가져와지는 개수(videos.length)가 다를 수 있음을 실사용 중 발견(예: 표시 218개인데
+      // 178개만 접근 가능했던 사례, 유튜브 자체 웹클라이언트로 재현해도 동일). 이 문제는 옛
+      // 스크래핑 경로(fetchPlaylistWithAuth, /browse 이어받기)에서만 발생하고 공식 API
+      // (usedOfficialApi === true)는 유튜브가 문서화·보장하는 API라 이 문제 자체가 없으므로,
+      // 공식 API로 성공했을 때는 안내문을 보여주지 않는다.
+      const countNote = usedOfficialApi
+        ? undefined
+        : '참고: 재생목록에 표시된 전체 개수와 실제로 가져와지는 개수가 다를 수 있습니다. 대형·비공개 재생목록에서 유튜브 서버가 일부 항목을 목록에서 제외하는 경우가 있어 발생하며, 확장 프로그램의 오류가 아닙니다.';
+
       // (2026-09-09, "이미 같은 이름 폴더가 있으면 물어보고, 기존 폴더 선택 시 이름 겹치는
       // 파일만 빼고 가져오고, 새 폴더 선택 시 전체를 그대로 가져오고, 끝나면 결과를 팝업으로
-      // 보여줘" 요청) 실제 추가 + 결과 팝업 표시를 한 곳에 모아 아래 두 선택지(기존 폴더 재사용/
-      // 새 폴더 생성) 모두에서 재사용한다. dedupeByName이 true면(=기존 폴더를 선택한 경우) 그
-      // 폴더에 이미 있는 영상과 "이름이 정확히 같은" 항목만 걸러내고, false면(=새 폴더를 만든
-      // 경우) 요청대로 중복 여부를 아예 따지지 않고 전부 넣는다. addVideosToFolder의 videoId
-      // 기준 전역 중복 방지(휴지통 제외, 어제 수정분)는 이 흐름에서는 쓰지 않는다 — 여기서 보여줄
-      // "총 N개 중 중복 M개 제외" 카운트가 이름 기준 필터링과 정확히 일치해야 하는데, 전역 dedupe가
-      // 추가로 끼어들면 두 기준이 서로 다른 이유로 건너뛴 항목이 섞여 카운트가 안 맞기 때문
-      // (skipDuplicateCheck: true로 완전히 우회).
+      // 보여줘" 요청) 실제 추가 + 결과 팝업 표시를 한 곳에 모아 새 폴더 생성/기존 폴더 재사용
+      // 양쪽 모두에서 재사용한다. dedupeByName이 true면(=기존 폴더에 넣는 경우 — "현재 폴더",
+      // "다른 폴더", 또는 "새 폴더 만들기"에서 같은 이름 폴더를 재사용하기로 한 경우) 그 폴더에
+      // 이미 있는 영상과 "이름이 정확히 같은" 항목만 걸러내고, false면(=새로 만든 폴더인 경우)
+      // 요청대로 중복 여부를 아예 따지지 않고 전부 넣는다. addVideosToFolder의 videoId 기준 전역
+      // 중복 방지(휴지통 제외)는 이 흐름에서는 쓰지 않는다 — 여기서 보여줄 "총 N개 중 중복 M개
+      // 제외" 카운트가 이름 기준 필터링과 정확히 일치해야 하는데, 전역 dedupe가 추가로 끼어들면
+      // 두 기준이 서로 다른 이유로 건너뛴 항목이 섞여 카운트가 안 맞기 때문(skipDuplicateCheck:
+      // true로 완전히 우회).
       const finishImport = async (folderId: string, dedupeByName: boolean): Promise<void> => {
         let toImport = videos;
         const duplicateNames: string[] = [];
@@ -163,6 +177,13 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
           })),
           { skipDuplicateCheck: true }
         );
+
+        // (2026-09-09, "가져오기를 실행취소/다시 실행 가능하게 해달라" 요청과 짝을 이루는 로직 —
+        // 이번 "새 폴더/현재 폴더/다른 폴더 선택" 요청으로 새로 생긴 "현재 폴더" 개념도 우선순위
+        // 1순위가 "직전에 가져왔던 폴더"이므로, 실제로 어느 목적지를 골랐든 완료 시점에 항상
+        // 갱신해둔다 — 전부 중복이라 added===0이어도 "이 폴더로 가져오기를 시도했다"는 사실 자체는
+        // 유효하므로 기록한다.
+        await setLastImportFolderId(folderId);
 
         // 무료 티어 영상 개수 한도(FREE_VIDEO_LIMIT)에 걸린 경우는 "이름이 같아 건너뜀"과 전혀
         // 다른 상황이라(한도 초과분은 몇 번을 다시 시도해도 절대 추가되지 않음) 결과 팝업 대신
@@ -208,61 +229,126 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
         });
       };
 
-      showMiniPopup({
-        mode: 'prompt',
-        title: '재생목록 가져오기',
-        message: `영상 ${videos.length}개를 새 폴더로 가져옵니다. 폴더 이름을 확인하거나 수정하세요.`,
-        // 재생목록 가져오기를 실행할 때마다 보여주는 일반 안내(2026-09-08 신설, 2026-09-08 공식
-        // API 도입 후 조건부로 변경) — 대형·비공개 재생목록에서 재생목록 자체에 표시된 전체 개수와
-        // 실제로 가져와지는 개수(위 videos.length)가 다를 수 있음을 실사용 중 발견(예: 표시 218개인데
-        // 178개만 접근 가능했던 사례, 유튜브 자체 웹클라이언트로 재현해도 동일). 이 문제는 옛
-        // 스크래핑 경로(fetchPlaylistWithAuth, /browse 이어받기)에서만 발생하고 공식 API
-        // (usedOfficialApi === true)는 유튜브가 문서화·보장하는 API라 이 문제 자체가 없으므로,
-        // 공식 API로 성공했을 때는 안내문을 보여주지 않는다. 특정 사용자 이름이나 구체적 기능명은
-        // 언급하지 않고 지금 실제로 존재하는 동작만 서술한다 — 다른 사용자에게 배포됐을 때도 그대로
-        // 맞는 문구여야 하기 때문.
-        note: usedOfficialApi
-          ? undefined
-          : '참고: 재생목록에 표시된 전체 개수와 실제로 가져와지는 개수가 다를 수 있습니다. 대형·비공개 재생목록에서 유튜브 서버가 일부 항목을 목록에서 제외하는 경우가 있어 발생하며, 확장 프로그램의 오류가 아닙니다.',
-        initialValue: title || '가져온 재생목록',
-        confirmLabel: '가져오기',
-        onSubmit: async (name) => {
-          const trimmed = name.trim();
-          if (!trimmed) throw new Error('폴더 이름을 입력하세요.');
-          if (videos.length === 0) throw new Error('가져올 영상이 없습니다.');
-          // (2026-09-09, "1970 폴더에 1개 파일이 있었는데 가져오기 하면서 1970(3) 폴더가 생기고
-          // 기존 1970 폴더의 파일도 다시 안 불러와진다" 제보로 시작된 로직 — 이번 요청으로 한 단계
-          // 더 확장) 같은 위치에 이름이 정확히 같은 폴더가 이미 있으면, 예전처럼 조용히 재사용하지
-          // 않고 사용자에게 먼저 물어본다: 기존 폴더에 합칠지, 아니면 새 폴더를 따로 만들지.
-          const data = await load();
-          let targetParentId = parentId;
-          const target = data.nodes[targetParentId];
-          if (!target || target.type !== 'folder' || targetParentId === data.trashId) {
-            targetParentId = data.rootId;
+      // 대상 폴더 하나가 정해졌을 때(현재 폴더/다른 폴더) 실행 직전에 폴더 이름을 보여주고 한 번
+      // 더 확인받는다(2026-09-09, "현재 폴더/다른 폴더에 넣을 때는 실행 직전에 폴더 이름을 보여
+      // 주고 확인하는 팝업을 띄워달라" 요청 — 매니저 탭 URL 입력창에 이미 적용된 것과 동일한
+      // 정책). "새 폴더 만들기"는 이름 입력 팝업 자체가 이미 확인 단계 역할을 하므로 이 단계를
+      // 거치지 않는다.
+      const confirmAndImport = (folderId: string, folderName: string): void => {
+        showMiniPopup({
+          mode: 'confirm',
+          title: '가져오기 확인',
+          message: `"${folderName}" 폴더에 영상 ${videos.length}개를 가져올까요?`,
+          confirmLabel: '가져오기',
+          onSubmit: async () => {
+            await finishImport(folderId, true);
           }
-          const existingFolder = folderChildren(data, targetParentId).find((f) => f.name === trimmed);
+        });
+      };
 
-          if (existingFolder) {
-            showMiniPopup({
-              mode: 'confirm',
-              title: '같은 이름의 폴더가 이미 있습니다',
-              message: `"${trimmed}" 폴더가 이미 있습니다. 이 폴더에 가져올까요?`,
-              note: '기존 폴더를 선택하면 이미 있는 것과 이름이 같은 영상은 제외하고 나머지만 추가합니다. 새 폴더를 만들면 중복 여부와 상관없이 재생목록 전체를 그대로 가져옵니다.',
-              confirmLabel: '기존 폴더에 가져오기',
-              cancelLabel: '새 폴더 만들기',
-              onSecondary: async () => {
-                const newFolder = await createFolder(parentId, trimmed);
-                await finishImport(newFolder.id, false);
-              },
-              onSubmit: async () => {
-                await finishImport(existingFolder.id, true);
-              }
-            });
+      // "새 폴더 만들기"를 고르면 이름 입력 팝업을 띄우고(기존 동작과 동일하게 재생목록 제목을
+      // 기본값으로 채움), 그 이름의 폴더가 parentFolderId 안에 이미 있으면 예전처럼(2026-09-09,
+      // "1970 폴더에 1개 파일이 있었는데 가져오기 하면서 1970(3) 폴더가 생긴다" 제보로 시작된
+      // 로직) 조용히 새로 만들지 않고 사용자에게 먼저 물어본다: 기존 폴더에 합칠지, 새 폴더를
+      // 따로 만들지.
+      const createNewFolderFlow = (parentFolderId: string): void => {
+        showMiniPopup({
+          mode: 'prompt',
+          title: '새 폴더 만들기',
+          message: `영상 ${videos.length}개를 담을 새 폴더 이름을 확인하거나 수정하세요.`,
+          note: countNote,
+          initialValue: title || '가져온 재생목록',
+          confirmLabel: '가져오기',
+          onSubmit: async (name) => {
+            const trimmed = name.trim();
+            if (!trimmed) throw new Error('폴더 이름을 입력하세요.');
+            if (videos.length === 0) throw new Error('가져올 영상이 없습니다.');
+            const data = await load();
+            const existingFolder = folderChildren(data, parentFolderId).find((f) => f.name === trimmed);
+
+            if (existingFolder) {
+              showMiniPopup({
+                mode: 'confirm',
+                title: '같은 이름의 폴더가 이미 있습니다',
+                message: `"${trimmed}" 폴더가 이미 있습니다. 이 폴더에 가져올까요?`,
+                note: '기존 폴더를 선택하면 이미 있는 것과 이름이 같은 영상은 제외하고 나머지만 추가합니다. 새 폴더를 만들면 중복 여부와 상관없이 재생목록 전체를 그대로 가져옵니다.',
+                confirmLabel: '기존 폴더에 가져오기',
+                cancelLabel: '새 폴더 만들기',
+                onSecondary: async () => {
+                  const newFolder = await createFolder(parentFolderId, trimmed);
+                  await finishImport(newFolder.id, false);
+                },
+                onSubmit: async () => {
+                  await finishImport(existingFolder.id, true);
+                }
+              });
+              return;
+            }
+
+            const folder = await createFolder(parentFolderId, trimmed);
+            await finishImport(folder.id, false);
+          }
+        });
+      };
+
+      // "다른 폴더에 넣기" — 매니저 탭의 MoveDialog.tsx와 같은 역할이지만 content script는
+      // React를 안 쓰므로 miniPopup의 'pick-folder' 모드로 동등하게 구현. 휴지통은
+      // folderChildren이 원래 제외하므로 목록에 안 뜬다.
+      const buildFolderRows = (data: TubeStoreData): { id: string; label: string; depth: number }[] => {
+        const rows: { id: string; label: string; depth: number }[] = [];
+        const root = data.nodes[data.rootId];
+        rows.push({ id: data.rootId, label: '🏠 ' + (root?.name ?? '튜브폴더'), depth: 0 });
+        const walk = (pid: string, depth: number) => {
+          for (const f of folderChildren(data, pid)) {
+            rows.push({ id: f.id, label: (f.icon || DEFAULT_FOLDER_ICON) + ' ' + f.name, depth });
+            walk(f.id, depth + 1);
+          }
+        };
+        walk(data.rootId, 1);
+        return rows;
+      };
+
+      // (2026-09-09, "'이 재생목록 가져오기'도 새 폴더/현재 폴더/다른 폴더 중 선택하게 해달라"
+      // 요청) "현재 폴더"는 매니저 탭의 currentFolderId와 달리 유튜브 페이지엔 원래 없는
+      // 개념이라, 산들과 상의해 우선순위를 정했다: ①직전에 재생목록을 가져왔던 폴더 → ②매니저
+      // 탭에 지금 열려있는 폴더 → ③(둘 다 없으면) 최상위 폴더. resolveCurrentFolderId가 유효성
+      // 검증(삭제됨·휴지통 이동됨 여부)까지 포함해 계산한다. "새 폴더 만들기"도 이 폴더 안에
+      // 만든다(매니저 탭의 "새 폴더 만들기"가 currentFolderId 안에 만드는 것과 같은 원칙).
+      const data = await load();
+      const currentFolderId = resolveCurrentFolderId(data, await getLastImportFolderId(), await getOpenFolderId());
+      const currentFolderName = data.nodes[currentFolderId]?.name ?? '튜브폴더';
+
+      showMiniPopup({
+        mode: 'choices',
+        title: '재생목록 가져오기',
+        message: `영상 ${videos.length}개를 가져올 위치를 선택하세요.`,
+        note: countNote,
+        choices: [
+          { id: 'new', label: '📁 새 폴더 만들기' },
+          { id: 'current', label: `📂 현재 폴더에 넣기 (${currentFolderName})` },
+          { id: 'other', label: '🗂️ 다른 폴더에 넣기' }
+        ],
+        onChoice: (id) => {
+          if (id === 'new') {
+            createNewFolderFlow(currentFolderId);
             return;
           }
-
-          const folder = await createFolder(parentId, trimmed);
-          await finishImport(folder.id, false);
+          if (id === 'current') {
+            confirmAndImport(currentFolderId, currentFolderName);
+            return;
+          }
+          // id === 'other'
+          const rows = buildFolderRows(data);
+          showMiniPopup({
+            mode: 'pick-folder',
+            title: '📁 폴더 선택',
+            message: `영상 ${videos.length}개를 가져올 폴더를 선택하세요.`,
+            folders: rows,
+            onPickFolder: (folderId) => {
+              const picked = data.nodes[folderId];
+              confirmAndImport(folderId, picked?.name ?? '');
+            }
+          });
         }
       });
     })();
