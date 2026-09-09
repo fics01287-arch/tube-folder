@@ -537,6 +537,69 @@ export async function moveNode(nodeId: string, newParentId: string): Promise<voi
 }
 
 /**
+ * (2026-09-09, "파일이 수십 개 이상 되면 삭제되는 속도가 너무 느린데 개선할 수 있나" 요청 —
+ * trashNodes()와 같은 이유로 함께 고침) 여러 항목을 한 번에 같은 대상 폴더로 이동한다.
+ * App.tsx의 다중 선택 드래그 이동·다중 선택 이동 다이얼로그가 예전엔 moveNode()를 항목 수만큼
+ * 반복 호출해 저장소를 그만큼 여러 번 load()·save()했다 — trashNodes()와 동일한 원칙(load
+ * 한 번 → 메모리에서 전부 수정 → save 한 번)으로 바꾼다.
+ *
+ * order는 배치 안에서 항목마다 순서대로 증가시켜야 화면에서 옮긴 순서가 유지된다(모두 같은 값을
+ * 주면 정렬이 뒤섞임) — nextOrder(data, newParentId)를 매번 다시 계산하는 대신 시작값 하나만
+ * 구해 반복마다 1씩 늘린다. moveNode()와 달리 유효하지 않은 개별 항목(자기 자신·자손 폴더로
+ * 이동 시도, 이미 그 폴더에 있음 등)은 예외를 던지지 않고 조용히 건너뛴다 — trashNodes()와 같은
+ * 이유(다중 선택 중 일부가 무효해도 나머지는 정상 처리돼야 함)이며, 단일 이동(moveNode)의 기존
+ * 에러 안내는 그대로 유지된다.
+ */
+export async function moveNodes(nodeIds: string[], newParentId: string): Promise<void> {
+  const data = await load();
+  const target = data.nodes[newParentId];
+  if (!target || target.type !== 'folder') {
+    throw new FolderOpError('이동할 폴더를 찾을 수 없습니다.');
+  }
+  if (newParentId === data.trashId) {
+    throw new FolderOpError('휴지통으로는 이 방법으로 이동할 수 없습니다.');
+  }
+
+  let order = nextOrder(data, newParentId);
+  let changed = false;
+
+  for (const nodeId of nodeIds) {
+    const node = data.nodes[nodeId];
+    if (!node) continue;
+    if (nodeId === data.rootId || nodeId === data.trashId) continue;
+    if (node.type === 'folder' && node.system === 'trash') continue;
+    if (newParentId === node.parentId) continue;
+
+    if (node.type === 'folder') {
+      if (newParentId === nodeId) continue;
+      // moveNode()와 동일한 사이클 방지 BFS — nodeId의 자손 집합 안에 newParentId가 있으면 이동 불가.
+      const descendants = new Set<string>([nodeId]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const k in data.nodes) {
+          const n = data.nodes[k];
+          if (!descendants.has(n.id) && n.parentId && descendants.has(n.parentId)) {
+            descendants.add(n.id);
+            grew = true;
+          }
+        }
+      }
+      if (descendants.has(newParentId)) continue;
+    }
+
+    const siblings = childrenOf(data, newParentId).filter((n) => n.id !== data.trashId);
+    node.name = uniqueName(siblings, node.name);
+    node.parentId = newParentId;
+    node.order = order++;
+    await touch(node);
+    changed = true;
+  }
+
+  if (changed) await save(data);
+}
+
+/**
  * 노드(폴더는 하위 트리 전체, 영상은 그 자체) 사본을 다른 폴더 안에 만든다 — 탐색기의
  * "복사→붙여넣기"에 해당(잘라내기→붙여넣기는 기존 moveNode 재사용, 우클릭 클립보드
  * 작업순서 4/8, 2026-08-31 신규). 원본은 그대로 두고 모든 자손을 새 id로 다시 만들어
@@ -689,6 +752,34 @@ export async function trashNode(nodeId: string): Promise<void> {
 }
 
 /**
+ * (2026-09-09, "파일이 수십 개 이상 되면 삭제되는 속도가 너무 느린데 개선할 수 있나" 요청)
+ * 여러 항목을 한 번에 휴지통으로 옮긴다. App.tsx의 다중 선택 일괄 삭제·드래그로 휴지통에 놓기가
+ * 예전엔 trashNode()를 항목 수만큼 반복 호출했는데, trashNode() 한 번마다 저장소 전체를
+ * load()·save()하므로(항목이 많을수록·영상 썸네일 등 데이터가 쌓일수록) N개 삭제 = 전체 blob을
+ * N번 읽고 N번 쓰는 셈이라 선택 개수에 비례해 느려졌다. emptyTrash()·addVideosToFolder()와
+ * 같은 원칙(load 한 번 → 메모리에서 전부 수정 → save 한 번)으로 바꿔 저장소 왕복을 1회로 줄인다.
+ *
+ * trashNode()와 달리 유효하지 않은 id(이미 없어졌거나 루트·휴지통 자신)는 예외를 던지지 않고
+ * 조용히 건너뛴다 — 다중 선택 중 하나가 그 사이(다른 기기 동기화 등으로) 이미 사라졌다고 해서
+ * 나머지 항목들의 삭제까지 통째로 실패해서는 안 되기 때문. 단일 항목 삭제(trashNode)는 기존처럼
+ * 즉시 에러를 보여줘야 하므로 그대로 두고, 이 함수는 다중 선택 전용으로 새로 추가한다.
+ */
+export async function trashNodes(nodeIds: string[]): Promise<void> {
+  const data = await load();
+  let changed = false;
+  for (const nodeId of nodeIds) {
+    const node = data.nodes[nodeId];
+    if (!node) continue;
+    if (nodeId === data.rootId || nodeId === data.trashId) continue;
+    node.prevParentId = node.parentId ?? undefined;
+    node.parentId = data.trashId;
+    await touch(node);
+    changed = true;
+  }
+  if (changed) await save(data);
+}
+
+/**
  * 휴지통에서 복원 — trashNode()가 기록해 둔 prevParentId(원래 있던 폴더)로 되돌린다.
  * (신설 2026-08-30, ROADMAP-CHECKLIST.md 4단계 "휴지통 복원 전용 버튼" 작업순서 1/8)
  * moveNode()를 그대로 쓰지 않는 이유: moveNode는 호출부가 목적지를 직접 골라야 하는 범용 함수이고,
@@ -717,4 +808,42 @@ export async function restoreFromTrash(nodeId: string): Promise<void> {
   delete node.prevParentId;
   await touch(node);
   await save(data);
+}
+
+/**
+ * (2026-09-09, "파일이 수십 개 이상 되면 삭제되는 속도가 너무 느린데 개선할 수 있나" 요청 —
+ * trashNodes()·moveNodes()와 같은 이유로 함께 고침) 여러 항목을 한 번에 복원한다. App.tsx의
+ * 다중 선택 일괄 복원이 예전엔 restoreFromTrash()를 항목 수만큼 반복 호출해 저장소를 그만큼
+ * 여러 번 load()·save()했다.
+ *
+ * 항목마다 되돌아갈 원래 폴더(prevParentId)가 서로 다를 수 있어(예: 서로 다른 폴더에서 삭제된
+ * 영상들을 휴지통에서 한꺼번에 선택해 복원) moveNodes()처럼 목적지 하나에 대해 order 시작값을
+ * 한 번만 구해 두는 방식을 쓸 수 없다 — nextOrder(data, targetId)를 항목별로 다시 계산한다
+ * (메모리 안 스캔이라 여전히 저장소 왕복 없이 빠르다). trashNodes()와 같은 이유로 유효하지 않은
+ * 항목(휴지통에 없는 것 등)은 예외 없이 조용히 건너뛴다.
+ */
+export async function restoreNodesFromTrash(nodeIds: string[]): Promise<void> {
+  const data = await load();
+  let changed = false;
+
+  for (const nodeId of nodeIds) {
+    const node = data.nodes[nodeId];
+    if (!node) continue;
+    if (node.parentId !== data.trashId) continue;
+
+    const prevTarget = node.prevParentId ? data.nodes[node.prevParentId] : undefined;
+    const prevValid =
+      !!prevTarget && prevTarget.type === 'folder' && prevTarget.id !== data.trashId && prevTarget.parentId !== data.trashId;
+    const targetId = prevValid ? (node.prevParentId as string) : data.rootId;
+
+    const siblings = childrenOf(data, targetId).filter((n) => n.id !== data.trashId);
+    node.name = uniqueName(siblings, node.name);
+    node.parentId = targetId;
+    node.order = nextOrder(data, targetId);
+    delete node.prevParentId;
+    await touch(node);
+    changed = true;
+  }
+
+  if (changed) await save(data);
 }

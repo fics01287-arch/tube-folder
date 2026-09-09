@@ -23,18 +23,21 @@ import {
   duplicateNode,
   emptyTrash,
   moveNode,
+  moveNodes,
   previewRetentionPurgeCount,
   purgeExpiredTrash,
   renameFolder,
   reorderChildren,
   restoreFromTrash,
+  restoreNodesFromTrash,
   setFolderIcon,
   setSort,
   setSortDir,
   setSortMode,
   setTrashRetentionDays,
   setView,
-  trashNode
+  trashNode,
+  trashNodes
 } from '../storage/folderOps';
 import { extractPlaylistId, fetchPlaylistVideos } from '../storage/playlistImport';
 import type { PlaylistVideo } from '../storage/playlistImport';
@@ -1388,9 +1391,10 @@ export default function App() {
           idsToTrash.length === 1
             ? `"${before.nodes[idsToTrash[0]]?.name ?? ''}" 휴지통으로 이동`
             : `${idsToTrash.length}개 항목 휴지통으로 이동`;
-        for (const id of idsToTrash) {
-          await trashNode(id);
-        }
+        // (2026-09-09, "파일이 수십 개 이상 되면 삭제되는 속도가 너무 느린데 개선할 수 있나"
+        // 요청) trashNode()를 개수만큼 반복 호출하면 매번 저장소 전체를 읽고 쓰게 되어 선택
+        // 개수에 비례해 느려졌다 — load 한 번·save 한 번으로 끝나는 trashNodes()로 교체.
+        await trashNodes(idsToTrash);
         pushUndo({ label, snapshot: before });
         setSelectedIds(new Set());
         await refresh(currentFolderId);
@@ -1416,9 +1420,9 @@ export default function App() {
           ids.length === 1
             ? `"${before.nodes[ids[0]]?.name ?? ''}" → "${before.nodes[destFolderId]?.name ?? ''}" 폴더로 이동`
             : `${ids.length}개 항목 → "${before.nodes[destFolderId]?.name ?? ''}" 폴더로 이동`;
-        for (const id of ids) {
-          await moveNode(id, destFolderId);
-        }
+        // (2026-09-09, 위 trashNodes와 같은 이유) moveNode() 반복 호출 대신 load/save 한 번씩만
+        // 하는 moveNodes()로 교체 — 다중 선택 드래그 이동도 항목 수에 비례해 느려지던 문제가 있었다.
+        await moveNodes(ids, destFolderId);
         pushUndo({ label, snapshot: before });
         setSelectedIds(new Set());
         await refresh(currentFolderId);
@@ -1481,9 +1485,8 @@ export default function App() {
         moveDialogIds.length === 1
           ? `"${before.nodes[moveDialogIds[0]]?.name ?? ''}" 폴더 이동`
           : `${moveDialogIds.length}개 항목 이동`;
-      for (const id of moveDialogIds) {
-        await moveNode(id, destFolderId);
-      }
+      // (2026-09-09, 위 trashNodes와 같은 이유) moveNode() 반복 호출 대신 moveNodes()로 교체.
+      await moveNodes(moveDialogIds, destFolderId);
       pushUndo({ label, snapshot: before });
       setMoveDialogIds(null);
       setSelectedIds(new Set());
@@ -1522,9 +1525,10 @@ export default function App() {
     try {
       const before = await load();
       const label = `${ids.length}개 항목 휴지통으로 이동`;
-      for (const id of ids) {
-        await trashNode(id);
-      }
+      // (2026-09-09, "파일이 수십 개 이상 되면 삭제되는 속도가 너무 느린데 개선할 수 있나" 요청)
+      // trashNode() 반복 호출 대신 load/save 한 번씩만 하는 trashNodes()로 교체 — 이게 산들이
+      // 겪은 "다중 선택 삭제가 느리다" 문제의 핵심 경로였다.
+      await trashNodes(ids);
       pushUndo({ label, snapshot: before });
       setSelectedIds(new Set());
       setBulkTrashConfirming(false);
@@ -1546,9 +1550,9 @@ export default function App() {
     try {
       const before = await load();
       const label = `${ids.length}개 항목 복원`;
-      for (const id of ids) {
-        await restoreFromTrash(id);
-      }
+      // (2026-09-09, 위 trashNodes와 같은 이유) restoreFromTrash() 반복 호출 대신
+      // restoreNodesFromTrash()로 교체 — 다중 선택 복원도 항목 수에 비례해 느려지던 문제가 있었다.
+      await restoreNodesFromTrash(ids);
       pushUndo({ label, snapshot: before });
       setSelectedIds(new Set());
       await refresh(currentFolderId);
