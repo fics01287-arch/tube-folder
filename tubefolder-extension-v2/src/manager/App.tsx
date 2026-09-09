@@ -547,7 +547,12 @@ export default function App() {
   type ImportFlow =
     | { stage: 'choose-destination'; videos: PlaylistVideo[]; apiFailReason: string | null }
     | { stage: 'name-new-folder'; videos: PlaylistVideo[]; apiFailReason: string | null }
-    | { stage: 'pick-folder'; videos: PlaylistVideo[]; apiFailReason: string | null };
+    | { stage: 'pick-folder'; videos: PlaylistVideo[]; apiFailReason: string | null }
+    // (2026-09-09, "현재 폴더/다른 폴더에 넣을 때는 실행 직전에 폴더 이름을 보여주고 확인하는
+    // 팝업을 띄워달라" 요청) "현재 폴더" 버튼을 누르거나 "다른 폴더" 폴더 선택을 마친 직후, 실제
+    // 추가(runImport) 전에 한 번 더 거치는 확인 단계. "새 폴더 만들기"는 이름 입력 팝업 자체가
+    // 이미 확인 단계 역할을 하므로 이 단계를 거치지 않는다.
+    | { stage: 'confirm-existing'; videos: PlaylistVideo[]; apiFailReason: string | null; folderId: string; folderName: string };
   const [importFlow, setImportFlow] = useState<ImportFlow | null>(null);
   const [importNewFolderName, setImportNewFolderName] = useState('');
   interface ImportResultInfo {
@@ -3450,7 +3455,18 @@ export default function App() {
               >
                 🆕 새 폴더 만들기
               </button>
-              <button className="tf-btn" onClick={() => runImport(currentFolder.id, importFlow.videos, true, importFlow.apiFailReason)}>
+              <button
+                className="tf-btn"
+                onClick={() =>
+                  setImportFlow({
+                    stage: 'confirm-existing',
+                    videos: importFlow.videos,
+                    apiFailReason: importFlow.apiFailReason,
+                    folderId: currentFolder.id,
+                    folderName: currentFolder.name
+                  })
+                }
+              >
                 📂 현재 폴더("{currentFolder.name}")에 넣기
               </button>
               <button
@@ -3511,9 +3527,50 @@ export default function App() {
           nodes={[]}
           title="🗂 가져올 폴더 선택"
           description="재생목록을 가져올 폴더를 선택하세요. 그 폴더에 이미 있는 것과 이름이 같은 영상은 제외됩니다."
-          onPick={(destFolderId) => runImport(destFolderId, importFlow.videos, true, importFlow.apiFailReason)}
+          onPick={(destFolderId) => {
+            const destFolder = store.nodes[destFolderId];
+            setImportFlow({
+              stage: 'confirm-existing',
+              videos: importFlow.videos,
+              apiFailReason: importFlow.apiFailReason,
+              folderId: destFolderId,
+              folderName: destFolder?.name ?? ''
+            });
+          }}
           onCancel={() => setImportFlow(null)}
         />
+      )}
+
+      {/* (2026-09-09, "현재 폴더/다른 폴더에 넣을 때는 실행 직전에 폴더 이름을 보여주고
+          확인하는 팝업을 띄워달라" 요청) 실제로 addVideosToFolder를 호출하기 전 마지막 확인
+          단계 — "새 폴더 만들기"는 이름 입력 팝업 자체가 이미 확인 역할을 하므로 여기 없음. */}
+      {importFlow?.stage === 'confirm-existing' && (
+        <div className="tf-sync-overlay" onClick={() => setImportFlow(null)}>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-import-confirm-title"
+          >
+            <h2 id="tf-import-confirm-title">가져오기 확인</h2>
+            <p className="tf-sync-desc">
+              "{importFlow.folderName}" 폴더에 영상 {importFlow.videos.length}개를 가져올까요?
+            </p>
+            <p className="tf-note">이미 있는 것과 이름이 같은 영상은 제외하고 추가합니다.</p>
+            <div className="tf-sync-actions">
+              <button className="tf-btn" onClick={() => setImportFlow(null)}>
+                취소
+              </button>
+              <button
+                className="tf-btn tf-btn-primary"
+                onClick={() => runImport(importFlow.folderId, importFlow.videos, true, importFlow.apiFailReason)}
+              >
+                가져오기
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 가져오기 결과 팝업(2026-09-09 요청) — 유튜브 페이지 우클릭 "이 재생목록 가져오기"의
