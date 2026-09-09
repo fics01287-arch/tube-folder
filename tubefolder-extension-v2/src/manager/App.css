@@ -934,6 +934,14 @@ select:focus-visible {
   opacity: 1;
 }
 
+/* (2026-09-09 발견) 아이콘 그리드 보기에서 체크박스로 여러 개를 선택해도, 마우스가 그 타일
+   위에 있지 않으면 opacity:0에 가려져 선택 표시(체크됨)가 안 보이던 버그. 체크된 상태라면
+   호버 여부와 무관하게 계속 보이도록 예외를 추가한다(선택 자체를 잃어버린 건 아니었음 —
+   화면에서만 안 보였던 것). */
+.tf-tile-actions:has(.tf-select-checkbox:checked) {
+  opacity: 1;
+}
+
 .tf-tile-actions .tf-btn-icon,
 .tf-tile-actions .tf-btn-danger-outline {
   padding: 2px 5px;
