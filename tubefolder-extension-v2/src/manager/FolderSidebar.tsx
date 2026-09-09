@@ -24,6 +24,7 @@
 // 그대로 유지한다(2026-09-04, 산들이 직접 확인한 결정은 아님 — 문제 있으면 알려달라고 안내함).
 
 import { useEffect, useState } from 'react';
+import type { RefObject } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import type { FolderNode, TubeNode, TubeStoreData } from '../storage/types';
@@ -38,6 +39,14 @@ interface Props {
   store: TubeStoreData;
   currentFolderId: string | null;
   onNavigate: (id: string) => void;
+  /**
+   * (2026-09-09, "사이드바 빈 공간에서 우클릭하면 새 폴더를 만들 수 있게 해달라" 요청) App.tsx의
+   * document 레벨 배경 우클릭 폴백 리스너가 "지금 우클릭한 지점이 사이드바 칸(왼쪽 컬럼) 안인지"를
+   * 판단하는 데 쓰는 ref. FolderSidebar가 직접 컨텍스트 메뉴를 그리지는 않는다 — 실제 메뉴는
+   * App.tsx가 공용 .tf-context-menu로 그리고, 대상 폴더만 rootId로 넘긴다(사이드바 트리는 항상
+   * 루트부터 시작하므로 "빈 공간"에 대응하는 폴더는 루트뿐).
+   */
+  navRef?: RefObject<HTMLElement>;
 }
 
 // App.tsx의 동명 함수와 완전히 같은 로직 — 4줄짜리 순수 함수 하나 때문에 App.tsx에서 export하도록
@@ -214,7 +223,7 @@ function SidebarRow({
   );
 }
 
-export default function FolderSidebar({ store, currentFolderId, onNavigate }: Props) {
+export default function FolderSidebar({ store, currentFolderId, onNavigate, navRef }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([store.rootId]));
 
   // 두 UI 동기화 — currentFolderId가 (사이드바 클릭이 아닌 다른 경로로도) 바뀔 때마다 그 조상
@@ -250,7 +259,7 @@ export default function FolderSidebar({ store, currentFolderId, onNavigate }: Pr
   if (!root) return null;
 
   return (
-    <nav className="tf-sidebar" aria-label="폴더 트리" role="tree">
+    <nav ref={navRef} className="tf-sidebar" aria-label="폴더 트리" role="tree">
       <SidebarRow
         node={root}
         store={store}

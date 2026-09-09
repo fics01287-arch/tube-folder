@@ -614,8 +614,14 @@ export default function App() {
   // 이유가 없음). mode가 'copy'면 duplicateNode, 'cut'이면 기존 moveNode를 재사용해 붙여넣는다.
   const [clipboard, setClipboard] = useState<{ mode: 'copy' | 'cut'; ids: string[] } | null>(null);
   // 우클릭 컨텍스트 메뉴 — forNode가 true면 특정 항목 위에서 열려 복사/잘라내기도 보여주고,
-  // false면 빈 공간에서 열려 붙여넣기만 보여준다(현재 보고 있는 폴더 안 빈 곳 우클릭).
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; forNode: boolean } | null>(null);
+  // false면 빈 공간에서 열려 붙여넣기·새 폴더를 보여준다. newFolderParentId는 "새 폴더"를 만들
+  // 대상 폴더 — 보통 현재 보고 있는 폴더(currentFolderId)지만, 사이드바 빈 공간에서 열렸을 때는
+  // (2026-09-09, "사이드바·본문 빈 공간에서 우클릭하면 새 폴더를 만들 수 있게 해달라" 요청) 항상
+  // 최상위 폴더(store.rootId)로 고정한다 — 사이드바 트리는 항상 루트부터 시작하고, 빈 공간을
+  // 클릭한 자리는 특정 폴더 행이 아니므로 대응되는 폴더가 루트뿐이기 때문.
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; forNode: boolean; newFolderParentId: string } | null>(
+    null
+  );
   // 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") — 현재 드롭 대상 행과, 그 행의 위/아래 중 어디에 삽입될지
   const [overId, setOverId] = useState<string | null>(null);
   const [overPosition, setOverPosition] = useState<'before' | 'after' | 'into' | null>(null);
@@ -768,6 +774,15 @@ export default function App() {
   const isGrid = !!store && GRID_VIEW_KEYS.has(store.settings.view);
   const isTable = store?.settings.view === 'details';
 
+  // (2026-09-09, "사이드바 빈 공간에서 우클릭하면 새 폴더를 만들 수 있게 해달라" 요청) 사이드바
+  // <nav> 실제 DOM — 아래 document 배경 우클릭 폴백이 클릭 x좌표가 이 요소의 가로 범위 안인지로
+  // "사이드바 칸에서 우클릭했는지"를 판단한다. 사이드바는 내용(폴더 트리)만큼만 높이를 차지해서
+  // (max-height일 뿐 height 고정이 아님) 트리 아래쪽 빈 공간은 이 요소의 실제 DOM 영역 밖이지만,
+  // x좌표만 보면 "왼쪽 컬럼 vs 오른쪽 컬럼" 구분에는 충분하다(y좌표는 보지 않음). 좁은 화면(모바일)
+  // 에서는 CSS로 사이드바 자체가 display:none이라 getBoundingClientRect().width가 0이 되므로
+  // 자연히 "사이드바 칸 아님" 판정으로 빠진다.
+  const sidebarNavRef = useRef<HTMLElement | null>(null);
+
   // 가상 스크롤 적용 여부 — 위 VIRTUALIZE_THRESHOLD 주석 참고.
   const useVirtual = !isManualSort && children.length > VIRTUALIZE_THRESHOLD;
   const scrollParentRef = useRef<HTMLDivElement>(null);
@@ -882,7 +897,8 @@ export default function App() {
   // document 레벨 배경 우클릭 폴백)를 둘 다 받을 수 있게 최소 구조 타입으로 받는다.
   function openContextMenu(
     e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number },
-    id: string | null
+    id: string | null,
+    newFolderParentId?: string
   ) {
     if (currentFolderId === store?.trashId) return;
     if (id && id === store?.trashId) return;
@@ -909,7 +925,7 @@ export default function App() {
       setSelectedIds(new Set([id]));
       setSelectAnchorId(id);
     }
-    setContextMenu({ x: e.clientX, y: e.clientY, forNode: !!id });
+    setContextMenu({ x: e.clientX, y: e.clientY, forNode: !!id, newFolderParentId: newFolderParentId ?? currentFolderId ?? '' });
   }
 
   function closeContextMenu() {
@@ -930,7 +946,13 @@ export default function App() {
     function onDocumentContextMenu(e: MouseEvent) {
       const target = e.target as HTMLElement | null;
       if (target?.closest('input, textarea, button, select, a, [role="menu"], [role="dialog"]')) return;
-      openContextMenu(e, null);
+      // (2026-09-09, "사이드바·본문 빈 공간에서 우클릭하면 새 폴더를 만들 수 있게 해달라" 요청)
+      // 이 폴백 하나가 사이드바 쪽 빈 공간과 본문 쪽 빈 공간을 둘 다 잡는다(둘 다 카드 실제 높이
+      // 밖의 문서 배경) — 클릭 x좌표가 사이드바 <nav>의 가로 범위 안이면 "새 폴더"의 대상을
+      // 최상위 폴더로, 아니면 지금 보고 있는 폴더(기존 동작, openContextMenu의 기본값)로 고정한다.
+      const sidebarRect = sidebarNavRef.current?.getBoundingClientRect();
+      const inSidebarColumn = !!sidebarRect && sidebarRect.width > 0 && e.clientX >= sidebarRect.left && e.clientX < sidebarRect.right;
+      openContextMenu(e, null, inSidebarColumn && store ? store.rootId : undefined);
     }
     document.addEventListener('contextmenu', onDocumentContextMenu);
     return () => document.removeEventListener('contextmenu', onDocumentContextMenu);
@@ -1163,6 +1185,30 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [contextMenu]);
+
+  // (2026-09-09, "사이드바·본문 빈 공간에서 우클릭하면 새 폴더를 만들 수 있게 해달라" 요청)
+  // 컨텍스트 메뉴의 "📁 새 폴더" 항목 전용 — 툴바의 handleCreateFolder()와 달리 이름 입력창이
+  // 옆에 없으므로(우클릭한 자리에 바로 뜨는 메뉴라), 탐색기 관례대로 기본 이름("새 폴더", 겹치면
+  // createFolder()가 자동으로 "새 폴더(2)"식으로 번호를 붙임)으로 즉시 만든 뒤, 그 자리에서 바로
+  // 이름을 고칠 수 있도록 인라인 이름변경 모드로 넣어준다(기존 ✏️ 버튼과 같은 editingId 메커니즘
+  // 재사용). parentId가 currentFolderId와 다르면(사이드바 빈 공간 → 최상위 폴더) refresh()가
+  // 그 폴더로 화면을 전환해줘서, 새로 만든 폴더가 바로 눈에 보이는 상태에서 이름을 고칠 수 있다.
+  async function handleContextCreateFolder(parentId: string) {
+    setError(null);
+    try {
+      const folder = await createFolder(parentId, '새 폴더');
+      // handleCreateFolder()와 같은 이유(추적 안 되는 변경) — 실행취소 스택을 비운다.
+      clearUndo();
+      setToast(null);
+      await refresh(parentId);
+      scheduleAutoSync();
+      setEditingId(folder.id);
+      setEditingValue(folder.name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
+    }
+  }
 
   async function handleCreateFolder() {
     setError(null);
@@ -2985,7 +3031,7 @@ export default function App() {
         }}
       >
         <div className="tf-layout">
-          <FolderSidebar store={store} currentFolderId={currentFolderId} onNavigate={navigateToFolder} />
+          <FolderSidebar store={store} currentFolderId={currentFolderId} onNavigate={navigateToFolder} navRef={sidebarNavRef} />
           <div className="tf-main-panel">
             {useVirtual ? (
               <div className="tf-scroll-area" ref={scrollParentRef} onContextMenu={(e) => openContextMenu(e, null)}>
@@ -3304,6 +3350,28 @@ export default function App() {
                 </button>
                 <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleCut}>
                   잘라내기
+                </button>
+                <div className="tf-context-menu-sep" role="separator" />
+              </>
+            )}
+            {/* (2026-09-09, "사이드바·본문 빈 공간에서 우클릭하면 새 폴더를 만들 수 있게 해달라"
+                요청) 빈 공간 우클릭(forNode=false)일 때만 노출 — 항목 위에서 우클릭했을 땐 그
+                항목에 대한 동작(위 복사/삭제/이동/잘라내기)만 의미가 있으므로 숨긴다. 대상 폴더는
+                openContextMenu가 미리 계산해 contextMenu.newFolderParentId에 담아둔 값(사이드바
+                빈 공간이면 최상위 폴더, 본문 빈 공간이면 지금 보고 있는 폴더)을 그대로 쓴다. */}
+            {!contextMenu.forNode && (
+              <>
+                <button
+                  type="button"
+                  className="tf-context-menu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    const parentId = contextMenu.newFolderParentId;
+                    closeContextMenu();
+                    handleContextCreateFolder(parentId);
+                  }}
+                >
+                  📁 새 폴더
                 </button>
                 <div className="tf-context-menu-sep" role="separator" />
               </>
