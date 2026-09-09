@@ -772,6 +772,19 @@ select:focus-visible {
   grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
 }
 
+/* 가상 스크롤 그리드(60개 초과 폴더, useVirtual)의 한 행 래퍼.
+   App.tsx에서 inline style로 grid-template-columns(repeat(N, 1fr))를 주지만,
+   이 클래스에 display 지정이 없으면 기본값 block이라 inline 스타일이 완전히 무시되어
+   타일들이 컨테이너 전체 너비로 세로로 쌓여버린다(2026-09-09 발견 — "음악 파일은 아이콘
+   크기가 안 바뀐다"는 제보의 실제 원인. 60개 이하 폴더는 가상 스크롤이 꺼져 있어
+   .tf-grid의 auto-fill 그리드가 그대로 적용되므로 증상이 없었음. 즉 파일 종류가 아니라
+   "가상 스크롤 적용 여부(항목 수 60개 기준)"가 진짜 변수였다). gap은 .tf-grid와 동일하게
+   맞춰 non-virtual 그리드와 시각적으로 일치시킨다(App.tsx GRID_GAP 상수와 일치). */
+.tf-grid-row {
+  display: grid;
+  gap: 14px;
+}
+
 .tf-tile {
   position: relative;
   display: flex;
