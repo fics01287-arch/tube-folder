@@ -550,6 +550,9 @@ export default function App() {
   const [trashInfoCheckbox, setTrashInfoCheckbox] = useState(false);
   // 폴더 아이콘 선택 패널 — 대상 폴더 id가 있으면 열려 있는 상태(ROADMAP 4단계 "폴더 아이콘 다양화")
   const [iconPickerFolderId, setIconPickerFolderId] = useState<string | null>(null);
+  // 영상 상세보기 모달(2026-09-09, "1번 아이콘을 클릭하면 파일의 상세내용을 자세히 볼 수 있도록"
+  // 요청) — 대상 영상 id가 있으면 열려 있는 상태. 폴더는 대상이 아니다(요청 확인 시 "영상만"으로 확정).
+  const [detailViewNodeId, setDetailViewNodeId] = useState<string | null>(null);
 
   // 실행취소(undo) — 토스트에 뭘 보여줄지만 이 컴포넌트가 들고 있고, 실제 스택 데이터는
   // undoStack.ts 모듈이 관리한다(2026-08-29 신규, ROADMAP-CHECKLIST.md 참고).
@@ -644,6 +647,10 @@ export default function App() {
 
   // 동기화 등 비동기 콜백이 "지금 보고 있는 폴더"를 유지한 채 새로고침할 수 있게 ref로 추적
   const currentFolderIdRef = useRef<string | null>(null);
+  // 체크박스 부활(2026-09-09, "2번 체크박스는 다시 살려" 요청) — onClick에서 shiftKey 여부를 잠깐
+  // 담아뒀다가 onChange에서 꺼내 쓰는 용도. 체크박스는 onClick(클릭 시점의 shiftKey 포함)과
+  // onChange(실제 토글) 이벤트가 분리돼 있어 이렇게 넘겨야 한다(원래 있던 방식 그대로 복원).
+  const checkboxShiftRef = useRef(false);
   currentFolderIdRef.current = currentFolderId;
   const refreshKeepingFolder = useCallback(() => {
     refresh(currentFolderIdRef.current);
@@ -818,21 +825,6 @@ export default function App() {
     setSelectAnchorId(id);
   }
 
-  // 체크박스를 없앤 뒤(2026-09-08, "1번 아이콘은 없애줘" 요청) 다중 선택을 유지하는 대체 수단 —
-  // 항목을 감싸는 행/타일 전체에 캡처 단계(capture phase)로 걸어서, Ctrl/Cmd+클릭이나 Shift+클릭일
-  // 때만 개입한다. 캡처 단계에서 stopPropagation()을 호출하면 그 안쪽(이름 버튼의 onClick=열기/재생)
-  // 까지 이벤트가 전달되지 않으므로, 다중 선택 클릭이 동시에 폴더를 열거나 영상을 재생시키는 일이
-  // 없다. 수정자 키가 전혀 없는 일반 클릭은 그대로 통과시켜(반환만 하고 아무 것도 안 함) 기존
-  // "클릭하면 열기/재생" 동작이 손상되지 않게 한다(요청 14번 "없애지 말고, 클릭했을 때 파일을
-  // 실행하는 기능만 적용해줘"에 따른 결정).
-  function handleRowClickCapture(e: React.MouseEvent, id: string) {
-    if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return;
-    if (id === store?.trashId) return; // 휴지통은 체크박스 시절에도 선택 대상이 아니었음 — 그대로 유지
-    e.preventDefault();
-    e.stopPropagation();
-    toggleSelect(id, e.shiftKey);
-  }
-
   // 우클릭 컨텍스트 메뉴 열기 — id가 있으면(항목 위 우클릭) 그 항목이 이미 선택돼 있지 않을 때만
   // 선택을 그 항목 하나로 교체한다(탐색기 관례: 선택 안 된 항목을 우클릭하면 그 항목만 선택되고,
   // 이미 여러 개 선택된 상태에서 그중 하나를 우클릭하면 선택 전체가 유지됨 — 이 경우 복사/잘라내기가
@@ -848,7 +840,7 @@ export default function App() {
     if (id && id === store?.trashId) return;
     // 아이콘 선택·이동 대상 선택·이름변경 등 다른 모달/편집 UI가 이미 열려있으면 겹쳐서 뜨지
     // 않게 무시한다(전역 단축키 effect의 modalOpen 판단과 같은 기준).
-    if (editingId || deletingId || iconPickerFolderId || trashInfoModalFolderId || (moveDialogIds && moveDialogIds.length > 0) || pendingRetentionDays !== undefined || playingVideo || emptyingTrash) {
+    if (editingId || deletingId || iconPickerFolderId || trashInfoModalFolderId || detailViewNodeId || (moveDialogIds && moveDialogIds.length > 0) || pendingRetentionDays !== undefined || playingVideo || emptyingTrash) {
       return;
     }
     e.preventDefault();
@@ -889,6 +881,7 @@ export default function App() {
     deletingId,
     iconPickerFolderId,
     trashInfoModalFolderId,
+    detailViewNodeId,
     moveDialogIds,
     pendingRetentionDays,
     playingVideo,
@@ -919,19 +912,17 @@ export default function App() {
     setMoveDialogIds(Array.from(selectedIds));
   }
 
-  // 항목별 메뉴의 "삭제" — 선택이 하나면 기존 개별 삭제 흐름(handleTrashClick, 처음 한 번은 정책
-  // 안내 팝업)을 그대로 타고, 여럿이면 다중 선택 툴바의 일괄 삭제 확인(bulkTrashConfirming)을 그대로
-  // 재사용한다. 새 삭제 로직을 만들지 않고 기존 두 경로에 얹기만 해서 정책 안내·보관기간 안내 문구가
-  // 어느 경로로 삭제하든 항상 동일하게 보이게 한다.
+  // 항목별 메뉴의 "삭제" — 선택 개수와 무관하게 항상 다중 선택 툴바의 삭제 확인(bulkTrashConfirming)을
+  // 재사용한다. openContextMenu가 메뉴를 열기 전에 이미 selectedIds를 최소 1개로 맞춰두므로(선택 안
+  // 됐던 항목이면 그 항목 하나로 교체) 단일 선택도 항상 이 경로로 안전하게 처리된다.
+  // (2026-09-09 수정: 예전에는 단일 선택일 때 handleTrashClick(개별 삭제 흐름, 폴더 행의 인라인
+  // 확인 UI에 의존)으로 갈라졌는데, 영상 행에는 그 인라인 확인 UI가 이제 없어서(체크박스로 대체)
+  // 영상 하나를 우클릭 메뉴로 삭제하면 확인 UI가 아예 뜨지 않는 버그가 있었다 — 폴더·영상 모두
+  // 있는 툴바 확인 UI 하나로 통일해 해결.)
   function handleMenuDelete() {
     closeContextMenu();
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    if (ids.length === 1) {
-      handleTrashClick(ids[0]);
-    } else {
-      setBulkTrashConfirming(true);
-    }
+    if (selectedIds.size === 0) return;
+    setBulkTrashConfirming(true);
   }
 
   // 붙여넣기는 항상 "지금 보고 있는 폴더"(currentFolderId)를 대상으로 한다 — 우클릭한 항목이
@@ -1031,6 +1022,7 @@ export default function App() {
           deletingId ||
           iconPickerFolderId ||
           trashInfoModalFolderId ||
+          detailViewNodeId ||
           (moveDialogIds && moveDialogIds.length > 0) ||
           pendingRetentionDays !== undefined ||
           playingVideo ||
@@ -1082,6 +1074,7 @@ export default function App() {
     deletingId,
     iconPickerFolderId,
     trashInfoModalFolderId,
+    detailViewNodeId,
     moveDialogIds,
     pendingRetentionDays,
     playingVideo,
@@ -1745,6 +1738,7 @@ export default function App() {
   // 접근성 보강(ROADMAP 4단계) — 배경 클릭 외에 Esc 키로도 오버레이 패널을 닫을 수 있게 한다.
   useEscapeClose(!!trashInfoModalFolderId, () => setTrashInfoModalFolderId(null));
   useEscapeClose(!!iconPickerFolderId, () => setIconPickerFolderId(null));
+  useEscapeClose(!!detailViewNodeId, () => setDetailViewNodeId(null));
 
   if (!store || !currentFolder) {
     return (
@@ -1802,15 +1796,28 @@ export default function App() {
             </button>
           )
         ) : (
-          <button
-            className="tf-row-name tf-row-name-video"
-            onClick={() => handleVideoClick(node)}
-            title={isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
-            {...dragProps?.attributes}
-            {...dragProps?.listeners}
-          >
-            🎬 {node.name}
-          </button>
+          <>
+            {/* (2026-09-09, "1번 아이콘을 클릭하면 파일의 상세내용을 자세히 볼 수 있도록" 요청)
+                체크박스가 있던 자리(1번)를 상세보기 버튼으로 대체 — 영상 전용, 폴더는 대상이 아님
+                (확인 완료). 이름 버튼과 분리된 별도 버튼이라 클릭해도 재생이 같이 실행되지 않는다. */}
+            <button
+              className="tf-btn tf-btn-icon tf-detail-btn"
+              onClick={() => setDetailViewNodeId(node.id)}
+              title="상세보기"
+              aria-label={`"${node.name}" 상세보기`}
+            >
+              ℹ️
+            </button>
+            <button
+              className="tf-row-name tf-row-name-video"
+              onClick={() => handleVideoClick(node)}
+              title={isVideo(node) && node.videoId ? '재생' : '재생할 수 없는 영상(videoId 없음)'}
+              {...dragProps?.attributes}
+              {...dragProps?.listeners}
+            >
+              🎬 {node.name}
+            </button>
+          </>
         )}
         {!isFolder && isVideo(node) && node.duration > 0 && <span className="tf-row-duration">{formatDuration(node.duration)}</span>}
 
@@ -1881,34 +1888,24 @@ export default function App() {
             </button>
           </span>
         )}
-        {/* (2026-09-08, "2번 아이콘을 선택하면 복사/삭제/이동/잘라내기를 선택할 수 있게" 요청)
-            영상 전용 단일 이동(➡️) 버튼을 없애고, 항목별 메뉴(복사·삭제·이동·잘라내기)를 여는
-            버튼(⋯)으로 바꿨다 — 우클릭 컨텍스트 메뉴와 동일한 openContextMenu()를 그대로 재사용해
-            메뉴 목록이 하나로 유지된다. */}
-        {!isFolder && deletingId === node.id && (
-          <span className="tf-row-actions tf-confirm-row">
-            <span className="tf-confirm-text">
-              휴지통으로 이동할까요?
-              {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
-            </span>
-            <button className="tf-btn tf-btn-danger-outline" onClick={() => confirmDelete(node.id)}>
-              삭제
-            </button>
-            <button className="tf-btn tf-btn-icon" onClick={() => setDeletingId(null)}>
-              취소
-            </button>
-          </span>
-        )}
-        {!isFolder && deletingId !== node.id && (
+        {/* (2026-09-09, "2번 체크박스는 다시 살려" 요청으로 원복) 영상 행의 2번 자리는 체크박스로
+            복원한다 — 클릭 한 번은 개별 토글, Shift+클릭은 범위 선택(toggleSelect, 다중 선택 툴바와
+            동일한 selectedIds를 공유). 복사/삭제/이동/잘라내기는 체크 후 다중 선택 툴바에서 고른다
+            (확인 완료) — 우클릭 컨텍스트 메뉴로도 동일하게 가능. */}
+        {!isFolder && !isTrash && (
           <span className="tf-row-actions">
-            <button
-              className="tf-btn tf-btn-icon"
-              onClick={(e) => openContextMenu(e, node.id)}
-              title="복사·삭제·이동·잘라내기"
-              aria-label={`"${node.name}" 작업 메뉴 열기`}
-            >
-              ⋯
-            </button>
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
           </span>
         )}
       </>
@@ -1947,6 +1944,19 @@ export default function App() {
 
     return (
       <>
+        {/* (2026-09-09, "1번 아이콘을 클릭하면 파일의 상세내용을 자세히 볼 수 있도록" 요청) 아이콘
+            그리드 보기에서는 타일 오른쪽 위 코너(드래그 손잡이의 대칭 위치)에 상세보기 버튼을 둔다
+            — 영상 전용, 폴더는 대상이 아님(확인 완료). */}
+        {!isFolder && (
+          <button
+            className="tf-btn tf-btn-icon tf-tile-detail-btn"
+            onClick={() => setDetailViewNodeId(node.id)}
+            title="상세보기"
+            aria-label={`"${node.name}" 상세보기`}
+          >
+            ℹ️
+          </button>
+        )}
         {isFolder && editingId === node.id ? (
           <div className="tf-tile-media">{media}</div>
         ) : (
@@ -2075,36 +2085,23 @@ export default function App() {
             </button>
           </span>
         )}
-        {/* (2026-09-08, "2번 아이콘을 선택하면 복사/삭제/이동/잘라내기를 선택할 수 있게" 요청)
-            영상 전용 단일 이동(➡️) 버튼을 없애고, 항목별 메뉴(복사·삭제·이동·잘라내기)를 여는
-            버튼(⋯)으로 바꿨다 — 우클릭 컨텍스트 메뉴와 동일한 openContextMenu()를 그대로 재사용해
-            메뉴 목록이 하나로 유지된다. */}
-        {!isFolder && deletingId === node.id && (
-          <span className="tf-tile-confirm">
-            <span className="tf-confirm-text">
-              휴지통으로 이동할까요?
-              {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
-            </span>
-            <span className="tf-tile-edit-actions">
-              <button className="tf-btn tf-btn-danger-outline" onClick={() => confirmDelete(node.id)}>
-                삭제
-              </button>
-              <button className="tf-btn tf-btn-icon" onClick={() => setDeletingId(null)}>
-                취소
-              </button>
-            </span>
-          </span>
-        )}
-        {!isFolder && deletingId !== node.id && (
+        {/* (2026-09-09, "2번 체크박스는 다시 살려" 요청으로 원복) 영상 타일의 액션 칸은 체크박스로
+            복원한다 — 목록 보기와 동일한 toggleSelect 로직(Shift+클릭 범위 선택 포함) 공유. 복사/삭제/
+            이동/잘라내기는 체크 후 다중 선택 툴바에서 고른다(확인 완료). */}
+        {!isFolder && !isTrash && (
           <span className="tf-tile-actions">
-            <button
-              className="tf-btn tf-btn-icon"
-              onClick={(e) => openContextMenu(e, node.id)}
-              title="복사·삭제·이동·잘라내기"
-              aria-label={`"${node.name}" 작업 메뉴 열기`}
-            >
-              ⋯
-            </button>
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
           </span>
         )}
       </>
@@ -2120,6 +2117,19 @@ export default function App() {
   ): { name: ReactNode; date: ReactNode; addedAt: ReactNode; type: ReactNode; size: ReactNode; actions: ReactNode } {
     const name = (
       <>
+        {/* (2026-09-09, "1번 아이콘을 클릭하면 파일의 상세내용을 자세히 볼 수 있도록" 요청) 표(자세히)
+            보기에서는 이름 칸 맨 앞, 체크박스가 있던 자리에 상세보기 버튼을 둔다 — 영상 전용, 폴더는
+            대상이 아님(확인 완료). */}
+        {!isFolder && (
+          <button
+            className="tf-btn tf-btn-icon tf-detail-btn"
+            onClick={() => setDetailViewNodeId(node.id)}
+            title="상세보기"
+            aria-label={`"${node.name}" 상세보기`}
+          >
+            ℹ️
+          </button>
+        )}
         {isFolder && editingId === node.id ? (
         <span className="tf-edit-row">
           <input
@@ -2228,34 +2238,23 @@ export default function App() {
             </button>
           </span>
         )}
-        {/* (2026-09-08, "2번 아이콘을 선택하면 복사/삭제/이동/잘라내기를 선택할 수 있게" 요청)
-            영상 전용 단일 이동(➡️) 버튼을 없애고, 항목별 메뉴(복사·삭제·이동·잘라내기)를 여는
-            버튼(⋯)으로 바꿨다 — 우클릭 컨텍스트 메뉴와 동일한 openContextMenu()를 그대로 재사용해
-            메뉴 목록이 하나로 유지된다. */}
-        {!isFolder && deletingId === node.id && (
-          <span className="tf-row-actions tf-confirm-row">
-            <span className="tf-confirm-text">
-              휴지통으로 이동할까요?
-              {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
-            </span>
-            <button className="tf-btn tf-btn-danger-outline" onClick={() => confirmDelete(node.id)}>
-              삭제
-            </button>
-            <button className="tf-btn tf-btn-icon" onClick={() => setDeletingId(null)}>
-              취소
-            </button>
-          </span>
-        )}
-        {!isFolder && deletingId !== node.id && (
+        {/* (2026-09-09, "2번 체크박스는 다시 살려" 요청으로 원복) 영상 행의 액션 칸은 체크박스로
+            복원한다 — 목록/그리드 보기와 동일한 toggleSelect 로직(Shift+클릭 범위 선택 포함) 공유.
+            복사/삭제/이동/잘라내기는 체크 후 다중 선택 툴바에서 고른다(확인 완료). */}
+        {!isFolder && !isTrash && (
           <span className="tf-row-actions">
-            <button
-              className="tf-btn tf-btn-icon"
-              onClick={(e) => openContextMenu(e, node.id)}
-              title="복사·삭제·이동·잘라내기"
-              aria-label={`"${node.name}" 작업 메뉴 열기`}
-            >
-              ⋯
-            </button>
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
           </span>
         )}
       </>
@@ -2635,9 +2634,21 @@ export default function App() {
               ↩ 일괄 복원
             </button>
           ) : (
-            <button className="tf-btn" onClick={() => setMoveDialogIds(Array.from(selectedIds))}>
-              📁 일괄 이동
-            </button>
+            <>
+              {/* (2026-09-09, "2번 체크박스를 클릭하면 복사·삭제·이동·잘라내기를 선택할 수 있도록"
+                  요청 — 체크 후 이 도구모음에서 고르는 방식으로 확정) 기존에 이미 있던 handleCopy/
+                  handleCut을 그대로 재사용 — 우클릭 메뉴·Ctrl+C/X와 동일한 함수라 동작이 하나로
+                  유지된다. 휴지통 안에서는 클립보드 대상이 아니라(기존 원칙) 노출하지 않는다. */}
+              <button className="tf-btn" onClick={handleCopy}>
+                복사
+              </button>
+              <button className="tf-btn" onClick={() => setMoveDialogIds(Array.from(selectedIds))}>
+                📁 일괄 이동
+              </button>
+              <button className="tf-btn" onClick={handleCut}>
+                잘라내기
+              </button>
+            </>
           )}
           {currentFolderId === store.trashId ? null : bulkTrashConfirming ? (
             <span className="tf-confirm-row">
@@ -2710,7 +2721,6 @@ export default function App() {
                           key={node.id}
                           className="tf-tile"
                           onContextMenu={(e) => openContextMenu(e, node.id)}
-                          onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                         >
                           {renderTileBody(node, isTrash, isFolder, store)}
                         </div>
@@ -2757,7 +2767,6 @@ export default function App() {
                       className="tf-vtable-row"
                       style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vItem.start}px)` }}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
-                      onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                     >
                       <div className="tf-vtable-cell tf-trow-handle-cell" />
                       <div className="tf-vtable-cell tf-tcell-name">{c.name}</div>
@@ -2785,7 +2794,6 @@ export default function App() {
                     className="tf-row"
                     style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vItem.start}px)` }}
                     onContextMenu={(e) => openContextMenu(e, node.id)}
-                    onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                   >
                     {renderRowBody(node, isTrash, isFolder, store)}
                   </li>
@@ -2821,7 +2829,6 @@ export default function App() {
                       coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
                       dragHandleLabel={`"${node.name}" 드래그로 이동`}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
-                      onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                     >
                       {(dragProps) => renderTileBody(node, isTrash, isFolder, store, dragProps)}
                     </SortableGridItem>
@@ -2890,7 +2897,6 @@ export default function App() {
                         coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
                         dragHandleLabel={`"${node.name}" 드래그로 이동`}
                         onContextMenu={(e) => openContextMenu(e, node.id)}
-                        onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                       >
                         {(dragProps) => {
                           const c = tableCells(node, isTrash, isFolder, store, dragProps);
@@ -2935,7 +2941,6 @@ export default function App() {
                       coDragging={activeDragIds.length > 1 && activeDragIds.includes(node.id) && node.id !== activeDragId}
                       dragHandleLabel={`"${node.name}" 드래그로 이동`}
                       onContextMenu={(e) => openContextMenu(e, node.id)}
-                      onClickCapture={(e) => handleRowClickCapture(e, node.id)}
                     >
                       {(dragProps) => renderRowBody(node, isTrash, isFolder, store, dragProps)}
                     </SortableRow>
@@ -2983,9 +2988,10 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
             role="menu"
           >
-            {/* 항목(폴더/영상) 위에서 열렸을 때만 복사/삭제/이동/잘라내기 노출 — 빈 공간 우클릭이나
-                영상 행의 새 메뉴 버튼(⋯)에서도 항상 forNode=true로 열리므로 동일하게 보인다.
-                순서는 산들 요청 원문 그대로: 복사, 삭제, 이동, 잘라내기(2026-09-08). */}
+            {/* 항목(폴더/영상) 위에서 열렸을 때만 복사/삭제/이동/잘라내기 노출 — 빈 공간 우클릭이면
+                forNode=false라 이 메뉴 항목들은 숨고 붙여넣기만 보인다. 순서는 산들 요청 원문 그대로:
+                복사, 삭제, 이동, 잘라내기(2026-09-08). 체크박스로 선택한 뒤 다중 선택 툴바에서 같은
+                작업을 고르는 경로와 별개로, 우클릭으로도 동일하게 쓸 수 있게 유지한다. */}
             {contextMenu.forNode && (
               <>
                 <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleCopy}>
@@ -3054,6 +3060,62 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 영상 상세보기 모달(2026-09-09, "1번 아이콘을 클릭하면 파일의 상세내용을 자세히 볼 수 있도록"
+          요청, 확인 완료: 모달 팝업 형태·영상 전용) — 다른 모달과 같은 tf-sync-overlay/tf-sync-panel
+          틀을 재사용해 새 모달 셸 CSS가 필요 없다. 표(자세히) 보기의 열 데이터 헬퍼(nodeDateValue 등)를
+          그대로 재사용해 표시 값이 표 보기와 항상 일치한다. */}
+      {detailViewNodeId &&
+        store &&
+        (() => {
+          const detailNode = store.nodes[detailViewNodeId];
+          if (!detailNode || !isVideo(detailNode)) return null;
+          return (
+            <div className="tf-sync-overlay" onClick={() => setDetailViewNodeId(null)}>
+              <div
+                className="tf-sync-panel"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="tf-detailview-title"
+              >
+                <h2 id="tf-detailview-title">ℹ️ 상세보기</h2>
+                {detailNode.thumb && <img className="tf-detail-thumb" src={detailNode.thumb} alt="" />}
+                <p className="tf-sync-desc">
+                  <strong>{detailNode.name}</strong>
+                </p>
+                <dl className="tf-detail-list">
+                  <dt>채널</dt>
+                  <dd>{detailNode.channel || '-'}</dd>
+                  <dt>유형</dt>
+                  <dd>{nodeTypeLabel(detailNode, store)}</dd>
+                  <dt>재생시간</dt>
+                  <dd>{detailNode.duration > 0 ? formatDuration(detailNode.duration) : '-'}</dd>
+                  <dt>유튜브 추가일</dt>
+                  <dd>{formatModifiedAt(nodeDateValue(detailNode)) || '-'}</dd>
+                  <dt>튜브폴더 추가일</dt>
+                  <dd>{formatModifiedAt(nodeAddedAtValue(detailNode)) || '-'}</dd>
+                  <dt>위치</dt>
+                  <dd>{nodePathLabel(store, detailNode) || '(최상위)'}</dd>
+                </dl>
+                <div className="tf-sync-actions">
+                  <button
+                    className="tf-btn"
+                    onClick={() => {
+                      setDetailViewNodeId(null);
+                      handleVideoClick(detailNode);
+                    }}
+                  >
+                    ▶ 재생
+                  </button>
+                  <button className="tf-btn" onClick={() => setDetailViewNodeId(null)}>
+                    닫기
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {trashInfoModalFolderId && store && (
         <div className="tf-sync-overlay" onClick={() => setTrashInfoModalFolderId(null)}>

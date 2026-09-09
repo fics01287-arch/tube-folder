@@ -490,6 +490,36 @@ select:focus-visible {
   color: #3ea6ff;
 }
 
+/* 영상 상세보기 모달(2026-09-09) — 다른 tf-sync-panel 모달과 같은 셸을 쓰고 내용만 추가. */
+.tf-detail-thumb {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.tf-detail-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  row-gap: 6px;
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+.tf-detail-list dt {
+  color: #999;
+  font-weight: 500;
+}
+
+.tf-detail-list dd {
+  margin: 0;
+  color: #f1f1f1;
+  word-break: break-word;
+}
+
 .tf-license-redeem {
   margin-top: 10px;
   display: flex;
@@ -629,9 +659,32 @@ select:focus-visible {
   margin-right: 4px;
 }
 
-/* (2026-09-08 제거) 체크박스는 없앴다 — "1번 아이콘은 없애줘" 요청. 다중 선택은 Ctrl/Shift+클릭
-   (handleRowClickCapture)으로 대체했다. 예전 .tf-select-checkbox/.tf-select-checkbox-tile 규칙은
-   더 이상 쓰이지 않아 삭제. */
+/* 목록·표 보기의 선택 체크박스(2026-09-09, "2번 체크박스는 다시 살려" 요청으로 원복 — 자리는
+   예전과 달리 영상 행의 오른쪽 액션 칸으로 옮겨졌다). */
+.tf-select-checkbox {
+  margin-right: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* 아이콘 그리드 보기에서 영상 타일 오른쪽 위 코너의 상세보기(ℹ️) 버튼 — 예전 체크박스가 있던 자리를
+   재사용한다(2026-09-09, "1번 아이콘을 클릭하면 파일의 상세내용을 볼 수 있도록" 요청). 왼쪽 위는
+   드래그 손잡이가 이미 쓰고 있어 오른쪽 위로 배치. */
+.tf-tile-detail-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  background: rgba(15, 15, 15, 0.7);
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.tf-tile:hover .tf-tile-detail-btn,
+.tf-tile:focus-within .tf-tile-detail-btn {
+  opacity: 1;
+}
 
 /* ── 정렬 · 드래그 재배치(ROADMAP 4단계 "드래그 삽입선 표시") ───────────── */
 .tf-sort-control {
