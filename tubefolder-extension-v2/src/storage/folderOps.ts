@@ -158,7 +158,11 @@ export interface ImportVideosResult {
 
 /**
  * 재생목록 일괄 가져오기 전용 — 여러 영상을 한 번의 load/save로 폴더에 추가.
- * videoId가 저장소 전체(트리 전역, 휴지통 포함) 어딘가에 이미 있으면 건너뛴다.
+ * videoId가 저장소 전체(트리 전역)의 휴지통 밖 어딘가에 이미 있으면 건너뛴다. 휴지통 안에만
+ * 있는 영상은 "이미 있음"으로 치지 않는다(2026-09-09, "휴지통에 있는 목록은 가져오기를 하지
+ * 않는데, 휴지통의 목록과 상관없이 재생목록을 가져오도록" 요청 — 예전엔 휴지통 포함 전역에서
+ * 찾았는데, 그러면 한 번 삭제(휴지통 이동)한 영상은 재생목록에 그대로 있어도 다시 가져올 방법이
+ * 없었다. 사용자 입장에선 "휴지통으로 옮김=이 폴더 구조에서 없앰"이므로 재도입을 막을 이유가 없음).
  * addVideoToFolder(storage.ts)를 반복 호출하지 않는 이유: 호출마다 load+save가 일어나
  * 영상 수가 많은 재생목록에서는 왕복이 그대로 배가되기 때문.
  */
@@ -171,10 +175,28 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
     targetId = data.rootId;
   }
 
+  // 휴지통 하위 트리 전체 수집(emptyTrash()와 동일한 BFS — 부모→자식 참조가 없어 parentId
+  // 역추적을 반복해야 함). 이 안에 있는 영상은 아래 existingVideoIds에서 제외한다.
+  const inTrash = new Set<string>();
+  {
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const k in data.nodes) {
+        const n = data.nodes[k];
+        if (inTrash.has(n.id) || n.id === data.trashId) continue;
+        if (n.parentId === data.trashId || (n.parentId && inTrash.has(n.parentId))) {
+          inTrash.add(n.id);
+          grew = true;
+        }
+      }
+    }
+  }
+
   const existingVideoIds = new Set<string>();
   for (const k in data.nodes) {
     const n = data.nodes[k];
-    if (n.type === 'video' && n.videoId) existingVideoIds.add(n.videoId);
+    if (n.type === 'video' && n.videoId && !inTrash.has(n.id)) existingVideoIds.add(n.videoId);
   }
 
   const siblings = childrenOf(data, targetId).filter((n) => n.id !== data.trashId);
