@@ -538,6 +538,27 @@ export default function App() {
   const [searchIncludeTrash, setSearchIncludeTrash] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  // 재생목록 URL 입력창 가져오기의 목적지 선택 흐름(2026-09-09, "새 폴더를 만들지, 현재 폴더에
+  // 넣을지, 다른 폴더에 넣을지 선택하게 하고, 유튜브 우클릭 가져오기 때처럼 중복 안내도 해달라"
+  // 요청) — content.ts(유튜브 페이지 우클릭 "이 재생목록 가져오기")에서 이미 만든 정책을 그대로
+  // 가져온다: 새 폴더=중복 검사 없이 전체 추가, 기존 폴더(현재 폴더든 다른 폴더든)=그 폴더 안
+  // 영상과 이름이 같은 항목만 제외. 다만 여기는 "같은 이름 폴더가 있어서 자동으로 물어보는" 게
+  // 아니라 사용자가 매번 목적지를 직접 고르는 방식이라 충돌 자동 감지 단계가 없다.
+  type ImportFlow =
+    | { stage: 'choose-destination'; videos: PlaylistVideo[]; apiFailReason: string | null }
+    | { stage: 'name-new-folder'; videos: PlaylistVideo[]; apiFailReason: string | null }
+    | { stage: 'pick-folder'; videos: PlaylistVideo[]; apiFailReason: string | null };
+  const [importFlow, setImportFlow] = useState<ImportFlow | null>(null);
+  const [importNewFolderName, setImportNewFolderName] = useState('');
+  interface ImportResultInfo {
+    total: number;
+    duplicateNames: string[];
+    added: number;
+    finalCount: number;
+    apiFailReason: string | null;
+  }
+  const [importResult, setImportResult] = useState<ImportResultInfo | null>(null);
+  const [importDupListOpen, setImportDupListOpen] = useState(false);
   const [playingVideo, setPlayingVideo] = useState<VideoNode | null>(null);
   const [emptyingTrash, setEmptyingTrash] = useState(false);
   const [licenseOpenSignal, setLicenseOpenSignal] = useState(0);
@@ -848,7 +869,19 @@ export default function App() {
     if (id && id === store?.trashId) return;
     // 아이콘 선택·이동 대상 선택·이름변경 등 다른 모달/편집 UI가 이미 열려있으면 겹쳐서 뜨지
     // 않게 무시한다(전역 단축키 effect의 modalOpen 판단과 같은 기준).
-    if (editingId || deletingId || iconPickerFolderId || trashInfoModalFolderId || detailViewNodeId || (moveDialogIds && moveDialogIds.length > 0) || pendingRetentionDays !== undefined || playingVideo || emptyingTrash) {
+    if (
+      editingId ||
+      deletingId ||
+      iconPickerFolderId ||
+      trashInfoModalFolderId ||
+      detailViewNodeId ||
+      (moveDialogIds && moveDialogIds.length > 0) ||
+      pendingRetentionDays !== undefined ||
+      playingVideo ||
+      emptyingTrash ||
+      importFlow ||
+      importResult
+    ) {
       return;
     }
     e.preventDefault();
@@ -894,6 +927,8 @@ export default function App() {
     pendingRetentionDays,
     playingVideo,
     emptyingTrash,
+    importFlow,
+    importResult,
     selectedIds
   ]);
 
@@ -1038,7 +1073,9 @@ export default function App() {
           (moveDialogIds && moveDialogIds.length > 0) ||
           pendingRetentionDays !== undefined ||
           playingVideo ||
-          emptyingTrash
+          emptyingTrash ||
+          importFlow ||
+          importResult
       );
       if (modalOpen) return;
 
@@ -1092,6 +1129,8 @@ export default function App() {
     pendingRetentionDays,
     playingVideo,
     emptyingTrash,
+    importFlow,
+    importResult,
     clipboard,
   ]);
 
@@ -1694,12 +1733,14 @@ export default function App() {
       // 미완료·동의 거부·네트워크 오류 등) 조용히 기존 공개 스크래핑으로 대체한다(content.ts와
       // 동일한 정책 — 신규 경로 도입으로 기존에 되던 가져오기가 안 되는 회귀를 막기 위함).
       let videos: PlaylistVideo[];
+      let suggestedTitle = '가져온 재생목록';
       let apiFailReason: string | null = null;
       try {
         const apiResult = await fetchPlaylistViaDataApi(playlistId, (p) =>
           setImportStatus(`영상 목록을 가져오는 중... (${p.fetched}개 인식됨)`)
         );
         videos = apiResult.videos;
+        if (apiResult.title) suggestedTitle = apiResult.title;
       } catch (apiError) {
         // 왜 대체됐는지가 콘솔에만 남으면 산들처럼 개발자도구를 안 여는 사용자는 원인을 알 방법이
         // 없다(2026-09-08, "그대로야"로 재현 안 되던 문제 진단 중 발견) — 최종 완료 메시지에
@@ -1710,36 +1751,17 @@ export default function App() {
           setImportStatus(`영상 목록을 가져오는 중... (${p.fetched}개 인식됨)`)
         );
       }
-      setImportStatus(`폴더에 추가하는 중... (${videos.length}개)`);
-      const result = await addVideosToFolder(
-        currentFolderId,
-        videos.map((v) => ({
-          url: youtubeUrl.watch(v.videoId),
-          videoId: v.videoId,
-          title: v.title,
-          channel: v.channel,
-          duration: v.duration,
-          playlistAddedAt: v.playlistAddedAt
-        }))
-      );
       setPlaylistUrl('');
-      // addVideosToFolder()는 실제로 추가된 게 하나라도 있을 때만 저장한다(전부 건너뛴 경우
-      // 저장 자체가 없으니 스냅샷도 그대로 유효 — added===0이면 비울 필요 없음).
-      if (result.added > 0) {
-        clearUndo();
-        setToast(null);
+      if (videos.length === 0) {
+        setImportStatus('가져올 영상이 없습니다.');
+        return;
       }
-      await refresh(currentFolderId);
-      scheduleAutoSync();
-      const fallbackNote = apiFailReason ? ` (공식 API 실패로 예전 방식 사용: ${apiFailReason})` : '';
-      if (result.limitReached) {
-        setImportStatus(
-          `무료 버전 한도라 ${result.added}개만 추가되고 나머지는 건너뛰었습니다. 전체를 가져오려면 업그레이드가 필요합니다.${fallbackNote}`
-        );
-        setLicenseOpenSignal((n) => n + 1);
-      } else {
-        setImportStatus(`완료: ${result.added}개 추가됨, ${result.skipped}개는 이미 있어 건너뜀${fallbackNote}`);
-      }
+      // (2026-09-09, "새 폴더를 만들지, 현재 폴더에 넣을지, 다른 폴더에 넣을지 선택하게 해달라"
+      // 요청) 예전엔 여기서 바로 currentFolderId에 추가했는데, 이제는 목적지 선택 팝업부터
+      // 띄운다 — 실제 추가는 runImport()가 목적지가 정해진 뒤에 담당한다.
+      setImportStatus(null);
+      setImportNewFolderName(suggestedTitle);
+      setImportFlow({ stage: 'choose-destination', videos, apiFailReason });
     } catch (e) {
       setImportStatus(null);
       setError(e instanceof Error ? e.message : String(e));
@@ -1749,10 +1771,110 @@ export default function App() {
     }
   }
 
+  // 목적지가 정해진 뒤 실제로 영상을 추가하고 결과 팝업을 띄운다 — 유튜브 페이지 우클릭
+  // "이 재생목록 가져오기"(content.ts)에서 이미 쓰는 것과 동일한 정책: dedupeByName이 true면
+  // (기존 폴더 재사용 — "현재 폴더" 또는 "다른 폴더") 그 폴더 안 영상과 이름이 같은 항목만
+  // 제외하고, false면(새 폴더) 중복 여부를 아예 따지지 않고 전부 넣는다. addVideosToFolder의
+  // videoId 기준 전역 중복 방지(휴지통 제외)는 여기서는 skipDuplicateCheck:true로 우회한다 —
+  // 이름 기준 필터링 결과와 "총 N개 중 중복 M개" 카운트가 정확히 일치해야 하기 때문.
+  async function runImport(folderId: string, videos: PlaylistVideo[], dedupeByName: boolean, apiFailReason: string | null) {
+    setError(null);
+    setImporting(true);
+    setImportStatus('폴더에 추가하는 중...');
+    try {
+      let toImport = videos;
+      const duplicateNames: string[] = [];
+      if (dedupeByName) {
+        const data = await load();
+        const existingNames = new Set<string>();
+        for (const k in data.nodes) {
+          const n = data.nodes[k];
+          if (n.type === 'video' && n.parentId === folderId) existingNames.add(n.name);
+        }
+        toImport = [];
+        for (const v of videos) {
+          if (existingNames.has(v.title)) duplicateNames.push(v.title);
+          else toImport.push(v);
+        }
+      }
+
+      const result = await addVideosToFolder(
+        folderId,
+        toImport.map((v) => ({
+          url: youtubeUrl.watch(v.videoId),
+          videoId: v.videoId,
+          title: v.title,
+          channel: v.channel,
+          duration: v.duration,
+          playlistAddedAt: v.playlistAddedAt
+        })),
+        { skipDuplicateCheck: true }
+      );
+
+      // addVideosToFolder()는 실제로 추가된 게 하나라도 있을 때만 저장한다(전부 건너뛴 경우
+      // 저장 자체가 없으니 스냅샷도 그대로 유효 — added===0이면 비울 필요 없음).
+      if (result.added > 0) {
+        clearUndo();
+        setToast(null);
+      }
+      await refresh(currentFolderId);
+      scheduleAutoSync();
+
+      if (result.limitReached) {
+        const fallbackNote = apiFailReason ? ` (공식 API 실패로 예전 방식 사용: ${apiFailReason})` : '';
+        setImportFlow(null);
+        setImportStatus(
+          `무료 버전 한도라 ${result.added}개만 추가되고 나머지는 건너뛰었습니다. 전체를 가져오려면 업그레이드가 필요합니다.${fallbackNote}`
+        );
+        setLicenseOpenSignal((n) => n + 1);
+        return;
+      }
+
+      const finalData = await load();
+      let finalCount = 0;
+      for (const k in finalData.nodes) {
+        const n = finalData.nodes[k];
+        if (n.type === 'video' && n.parentId === folderId) finalCount++;
+      }
+
+      setImportFlow(null);
+      setImportStatus(null);
+      setImportResult({ total: videos.length, duplicateNames, added: result.added, finalCount, apiFailReason });
+    } catch (e) {
+      setImportStatus(null);
+      setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // "새 폴더 만들기" 선택 후 이름을 확정하면 currentFolderId 안에 그 이름으로 새 폴더를 만들고
+  // (기존 "+ 새 폴더" 버튼과 같은 위치 규칙 — handleCreateFolder 참고) 중복 검사 없이 전체를 넣는다.
+  async function handleCreateNewFolderAndImport() {
+    if (!importFlow || importFlow.stage !== 'name-new-folder' || !currentFolderId) return;
+    const trimmed = importNewFolderName.trim();
+    if (!trimmed) {
+      setError('폴더 이름을 입력하세요.');
+      return;
+    }
+    setError(null);
+    try {
+      const folder = await createFolder(currentFolderId, trimmed);
+      await runImport(folder.id, importFlow.videos, false, importFlow.apiFailReason);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
+    }
+  }
+
   // 접근성 보강(ROADMAP 4단계) — 배경 클릭 외에 Esc 키로도 오버레이 패널을 닫을 수 있게 한다.
   useEscapeClose(!!trashInfoModalFolderId, () => setTrashInfoModalFolderId(null));
   useEscapeClose(!!iconPickerFolderId, () => setIconPickerFolderId(null));
   useEscapeClose(!!detailViewNodeId, () => setDetailViewNodeId(null));
+  useEscapeClose(!!importFlow, () => setImportFlow(null));
+  useEscapeClose(!!importResult && !importDupListOpen, () => setImportResult(null));
+  useEscapeClose(importDupListOpen, () => setImportDupListOpen(false));
 
   if (!store || !currentFolder) {
     return (
@@ -2561,9 +2683,9 @@ export default function App() {
               if (e.key === 'Enter') handleImportPlaylist();
             }}
             placeholder="유튜브 재생목록 URL 붙여넣기 (이 폴더로 가져오기)"
-            disabled={importing}
+            disabled={importing || !!importFlow}
           />
-          <button className="tf-btn" onClick={handleImportPlaylist} disabled={importing || !playlistUrl.trim()}>
+          <button className="tf-btn" onClick={handleImportPlaylist} disabled={importing || !!importFlow || !playlistUrl.trim()}>
             {importing ? '가져오는 중...' : '📥 재생목록 가져오기'}
           </button>
         </div>
@@ -3305,6 +3427,150 @@ export default function App() {
           onPick={handleConfirmMove}
           onCancel={() => setMoveDialogIds(null)}
         />
+      )}
+
+      {/* 재생목록 URL 입력창 가져오기의 목적지 선택 팝업(2026-09-09 요청) — 유튜브 우클릭
+          가져오기와 달리 "같은 이름 폴더가 있어서 물어보는" 게 아니라, 매번 직접 고르는 방식이라
+          단순한 3지선다. 다른 모달들과 같은 tf-sync-overlay/tf-sync-panel 틀을 재사용한다. */}
+      {importFlow?.stage === 'choose-destination' && currentFolder && (
+        <div className="tf-sync-overlay" onClick={() => setImportFlow(null)}>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-import-dest-title"
+          >
+            <h2 id="tf-import-dest-title">📥 재생목록 가져오기</h2>
+            <p className="tf-sync-desc">영상 {importFlow.videos.length}개를 어디에 가져올까요?</p>
+            <div className="tf-import-dest-options">
+              <button
+                className="tf-btn"
+                onClick={() => setImportFlow({ stage: 'name-new-folder', videos: importFlow.videos, apiFailReason: importFlow.apiFailReason })}
+              >
+                🆕 새 폴더 만들기
+              </button>
+              <button className="tf-btn" onClick={() => runImport(currentFolder.id, importFlow.videos, true, importFlow.apiFailReason)}>
+                📂 현재 폴더("{currentFolder.name}")에 넣기
+              </button>
+              <button
+                className="tf-btn"
+                onClick={() => setImportFlow({ stage: 'pick-folder', videos: importFlow.videos, apiFailReason: importFlow.apiFailReason })}
+              >
+                🗂 다른 폴더에 넣기
+              </button>
+            </div>
+            <p className="tf-note">
+              새 폴더는 중복 여부와 상관없이 전체를 가져오고, 현재 폴더·다른 폴더는 그 폴더에 이미 있는 것과 이름이 같은 영상은 제외합니다.
+            </p>
+            <div className="tf-sync-actions">
+              <button className="tf-btn" onClick={() => setImportFlow(null)}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importFlow?.stage === 'name-new-folder' && (
+        <div className="tf-sync-overlay" onClick={() => setImportFlow(null)}>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-import-newfolder-title"
+          >
+            <h2 id="tf-import-newfolder-title">🆕 새 폴더 만들기</h2>
+            <p className="tf-sync-desc">영상 {importFlow.videos.length}개를 담을 새 폴더 이름을 확인하거나 수정하세요.</p>
+            <input
+              className="tf-input"
+              value={importNewFolderName}
+              onChange={(e) => setImportNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateNewFolderAndImport();
+              }}
+              maxLength={200}
+              autoFocus
+            />
+            <div className="tf-sync-actions">
+              <button className="tf-btn" onClick={() => setImportFlow(null)}>
+                취소
+              </button>
+              <button className="tf-btn tf-btn-primary" onClick={handleCreateNewFolderAndImport} disabled={!importNewFolderName.trim()}>
+                가져오기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importFlow?.stage === 'pick-folder' && store && (
+        <MoveDialog
+          store={store}
+          nodes={[]}
+          title="🗂 가져올 폴더 선택"
+          description="재생목록을 가져올 폴더를 선택하세요. 그 폴더에 이미 있는 것과 이름이 같은 영상은 제외됩니다."
+          onPick={(destFolderId) => runImport(destFolderId, importFlow.videos, true, importFlow.apiFailReason)}
+          onCancel={() => setImportFlow(null)}
+        />
+      )}
+
+      {/* 가져오기 결과 팝업(2026-09-09 요청) — 유튜브 페이지 우클릭 "이 재생목록 가져오기"의
+          결과 팝업과 완전히 같은 형식·문구를 매니저 탭 URL 입력창 가져오기에도 그대로 맞춘다. */}
+      {importResult && !importDupListOpen && (
+        <div className="tf-sync-overlay" onClick={() => setImportResult(null)}>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-import-result-title"
+          >
+            <h2 id="tf-import-result-title">가져오기 완료</h2>
+            <p className="tf-sync-desc">
+              총 {importResult.total}개 중 중복 {importResult.duplicateNames.length}개를 제외하고 {importResult.added}개를 가져왔습니다.
+              현재 폴더에는 총 {importResult.finalCount}개의 파일이 있습니다.
+            </p>
+            {importResult.apiFailReason && (
+              <p className="tf-note">참고: 공식 API 실패로 예전 방식을 사용했습니다 ({importResult.apiFailReason}).</p>
+            )}
+            <div className="tf-sync-actions">
+              {importResult.duplicateNames.length > 0 && (
+                <button className="tf-btn" onClick={() => setImportDupListOpen(true)}>
+                  중복 목록 보기
+                </button>
+              )}
+              <button className="tf-btn tf-btn-primary" onClick={() => setImportResult(null)}>
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importResult && importDupListOpen && (
+        <div className="tf-sync-overlay" onClick={() => setImportDupListOpen(false)}>
+          <div
+            className="tf-sync-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tf-import-duplist-title"
+          >
+            <h2 id="tf-import-duplist-title">제외된 중복 파일 ({importResult.duplicateNames.length}개)</h2>
+            <ul className="tf-import-dup-list">
+              {importResult.duplicateNames.map((name, i) => (
+                <li key={i}>{name}</li>
+              ))}
+            </ul>
+            <div className="tf-sync-actions">
+              <button className="tf-btn" onClick={() => setImportDupListOpen(false)}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (

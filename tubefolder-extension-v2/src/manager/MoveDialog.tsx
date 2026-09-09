@@ -9,10 +9,19 @@ import { DEFAULT_FOLDER_ICON } from '../shared/folderIcons';
 
 interface MoveDialogProps {
   store: TubeStoreData;
-  /** 옮길 노드들 — 단일 이동(📁 버튼)이든 다중 선택 후 일괄 이동이든 배열 하나로 통일해서 받는다. */
+  /**
+   * 옮길 노드들 — 단일 이동(📁 버튼)이든 다중 선택 후 일괄 이동이든 배열 하나로 통일해서 받는다.
+   * 빈 배열이면(2026-09-09, 재생목록 가져오기의 "다른 폴더에 넣기" 목적지 선택용으로 재사용
+   * — 옮길 기존 항목이 없어 "자기 자신·하위 폴더로는 못 감" 같은 제약이 필요 없는 경우) 아무
+   * 폴더도 비활성화하지 않는다 — title/description을 함께 넘겨 문구도 그 용도에 맞게 바꿀 것.
+   */
   nodes: TubeNode[];
   onPick: (destFolderId: string) => void;
   onCancel: () => void;
+  /** 기본값 "📁 다른 폴더로 이동" — 이동이 아닌 다른 용도로 재사용할 때 덮어쓴다. */
+  title?: string;
+  /** 기본값은 nodes 개수 기준 이동 안내문 — 이동이 아닌 다른 용도로 재사용할 때 덮어쓴다. */
+  description?: string;
 }
 
 interface TreeRow {
@@ -72,10 +81,14 @@ function buildRows(store: TubeStoreData, invalid: Set<string>): TreeRow[] {
   return rows;
 }
 
-export default function MoveDialog({ store, nodes, onPick, onCancel }: MoveDialogProps) {
+export default function MoveDialog({ store, nodes, onPick, onCancel, title, description }: MoveDialogProps) {
   const invalid = buildInvalidSet(store, nodes);
   const rows = buildRows(store, invalid);
-  const desc = nodes.length === 1 ? `"${nodes[0]?.name ?? ''}" 항목을 옮길 폴더를 선택하세요.` : `선택한 ${nodes.length}개 항목을 옮길 폴더를 선택하세요.`;
+  const desc =
+    description ??
+    (nodes.length === 1
+      ? `"${nodes[0]?.name ?? ''}" 항목을 옮길 폴더를 선택하세요.`
+      : `선택한 ${nodes.length}개 항목을 옮길 폴더를 선택하세요.`);
 
   return (
     <div className="tf-sync-overlay" onClick={onCancel}>
@@ -86,7 +99,7 @@ export default function MoveDialog({ store, nodes, onPick, onCancel }: MoveDialo
         aria-modal="true"
         aria-labelledby="tf-movedialog-title"
       >
-        <h2 id="tf-movedialog-title">📁 다른 폴더로 이동</h2>
+        <h2 id="tf-movedialog-title">{title ?? '📁 다른 폴더로 이동'}</h2>
         <p className="tf-sync-desc">{desc}</p>
         <ul className="tf-move-tree">
           {rows.map((row) => (

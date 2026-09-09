@@ -479,6 +479,47 @@ select:focus-visible {
   margin: 0 0 12px;
 }
 
+/* 본문(tf-sync-desc)보다 한 단계 옅은 톤의 부가 안내문(2026-09-09, 재생목록 가져오기 목적지
+   선택·결과 팝업에서 사용 — content.ts의 미니팝업 note와 같은 역할을 매니저 탭 모달에서도). */
+.tf-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #999;
+  margin: -4px 0 12px;
+}
+
+/* 재생목록 가져오기 목적지 선택 팝업의 3지선다 버튼 — 가로로 늘어놓으면 좁은 화면에서 글자가
+   잘리므로 세로로 쌓고, 각 버튼을 패널 너비만큼 늘린다. */
+.tf-import-dest-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tf-import-dest-options .tf-btn {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+/* 가져오기 결과 팝업의 "중복 목록 보기" — content.ts 미니팝업의 tf-dup-list와 같은 역할. */
+.tf-import-dup-list {
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0 0 12px;
+  padding: 8px 8px 8px 24px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #ddd;
+}
+
+.tf-import-dup-list li {
+  word-break: break-all;
+}
+
 .tf-sync-fineprint {
   font-size: 12px;
   color: #999;
