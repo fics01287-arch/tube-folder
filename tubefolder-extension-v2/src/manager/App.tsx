@@ -572,6 +572,13 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAnchorId, setSelectAnchorId] = useState<string | null>(null);
   const [bulkTrashConfirming, setBulkTrashConfirming] = useState(false);
+  // (2026-09-09, "삭제를 클릭했을 때 이 메시지가 마우스를 클릭한 자리에서 팝업으로 뜨게 해줘.
+  // 이 기능은 없애지 말고 그대로 둬" 요청) 마우스로 삭제를 트리거했을 때(우클릭 메뉴의 "삭제",
+  // 툴바의 "🗑 일괄 휴지통 이동" 버튼) 그 클릭 좌표를 기억해뒀다가, 아래 다중 선택 툴바의 기존
+  // 확인 UI(tf-confirm-row)는 그대로 둔 채 마우스 위치에 별도 팝업으로도 같은 확인 UI를 띄운다
+  // — 둘 다 동일한 bulkTrashConfirming/handleBulkTrash를 공유하므로 어느 쪽에서 눌러도 동작은
+  // 같다. Delete 키처럼 마우스 좌표가 없는 경로는 null로 둬 팝업 없이 기존 툴바 UI만 나타난다.
+  const [deleteConfirmPos, setDeleteConfirmPos] = useState<{ x: number; y: number } | null>(null);
   // 우클릭 클립보드(복사·잘라내기·붙여넣기, 작업순서 4/8, 2026-08-31 산들 착수 승인) — 탐색기의
   // Ctrl+C/X/V에 해당. 저장소에 남기지 않고 이 세션(탭)이 살아있는 동안만 메모리에 들고 있는다
   // (탐색기도 클립보드는 앱 재시작하면 비워지는 것과 같은 원칙, 굳이 localStorage 등에 영속화할
@@ -599,6 +606,7 @@ export default function App() {
     setSelectedIds(new Set());
     setSelectAnchorId(null);
     setBulkTrashConfirming(false);
+    setDeleteConfirmPos(null);
   }, [currentFolderId]);
 
   // 실제 "사용자가 다른 폴더를 열었다"에 해당하는 지점(목록/그리드/표에서 폴더 열기, breadcrumb
@@ -920,9 +928,13 @@ export default function App() {
   // 영상 하나를 우클릭 메뉴로 삭제하면 확인 UI가 아예 뜨지 않는 버그가 있었다 — 폴더·영상 모두
   // 있는 툴바 확인 UI 하나로 통일해 해결.)
   function handleMenuDelete() {
+    // 컨텍스트 메뉴가 열렸던 우클릭 좌표를 팝업 위치로 재사용 — closeContextMenu()가 그 상태를
+    // 지우기 전에 먼저 읽어둔다(2026-09-09, 마우스 위치 팝업 요청).
+    const pos = contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null;
     closeContextMenu();
     if (selectedIds.size === 0) return;
     setBulkTrashConfirming(true);
+    setDeleteConfirmPos(pos);
   }
 
   // 붙여넣기는 항상 "지금 보고 있는 폴더"(currentFolderId)를 대상으로 한다 — 우클릭한 항목이
@@ -1046,6 +1058,7 @@ export default function App() {
         if (selectedIds.size === 0) return;
         e.preventDefault();
         setBulkTrashConfirming(true);
+        setDeleteConfirmPos(null); // 키보드 트리거는 마우스 좌표가 없으니 팝업 없이 툴바 확인 UI만
         return;
       }
 
@@ -1460,6 +1473,7 @@ export default function App() {
       pushUndo({ label, snapshot: before });
       setSelectedIds(new Set());
       setBulkTrashConfirming(false);
+      setDeleteConfirmPos(null);
       await refresh(currentFolderId);
       scheduleAutoSync();
       setToast({ label, kind: 'undo', ts: Date.now() });
@@ -2737,17 +2751,67 @@ export default function App() {
               <button className="tf-btn tf-btn-danger-outline" onClick={handleBulkTrash}>
                 이동
               </button>
-              <button className="tf-btn tf-btn-icon" onClick={() => setBulkTrashConfirming(false)}>
+              <button
+                className="tf-btn tf-btn-icon"
+                onClick={() => {
+                  setBulkTrashConfirming(false);
+                  setDeleteConfirmPos(null);
+                }}
+              >
                 취소
               </button>
             </span>
           ) : (
             selectedIds.size > 0 && (
-              <button className="tf-btn tf-btn-danger-outline" onClick={() => setBulkTrashConfirming(true)}>
+              <button
+                className="tf-btn tf-btn-danger-outline"
+                onClick={(e) => {
+                  // (2026-09-09 요청) 이 버튼 자체의 확인 UI(위 tf-confirm-row)는 그대로 두고,
+                  // 추가로 클릭한 마우스 좌표에도 같은 확인 팝업을 띄운다 — 툴바가 화면 밖으로
+                  // 스크롤돼 있어도 방금 클릭한 자리에서 바로 확인/취소할 수 있게.
+                  setBulkTrashConfirming(true);
+                  setDeleteConfirmPos({ x: e.clientX, y: e.clientY });
+                }}
+              >
                 🗑 일괄 휴지통 이동 ({selectedIds.size}개)
               </button>
             )
           )}
+        </div>
+      )}
+
+      {/* 마우스로 삭제를 트리거한 자리에 뜨는 휴지통 이동 확인 팝업(2026-09-09 요청) — 위
+          tf-bulk-toolbar 안의 tf-confirm-row와 완전히 같은 내용·같은 핸들러를 그대로 다시
+          렌더링한다(하나를 지우는 게 아니라 함께 보여주는 것). 오버레이를 깔지 않아 툴바 쪽
+          확인/취소 버튼도 동시에 그대로 눌릴 수 있다. */}
+      {bulkTrashConfirming && deleteConfirmPos && (
+        <div
+          className="tf-trash-confirm-popup"
+          style={{
+            left: Math.min(deleteConfirmPos.x, window.innerWidth - 320),
+            top: Math.min(deleteConfirmPos.y, window.innerHeight - 96)
+          }}
+          role="alertdialog"
+          aria-label="휴지통으로 이동 확인"
+        >
+          <span className="tf-confirm-text">
+            {selectedIds.size}개 항목을 휴지통으로 이동할까요?
+            {store.settings.trashRetentionDays != null && ` (보관기간 ${store.settings.trashRetentionDays}일 후 자동 완전삭제)`}
+          </span>
+          <span className="tf-trash-confirm-popup-actions">
+            <button className="tf-btn tf-btn-danger-outline" onClick={handleBulkTrash}>
+              이동
+            </button>
+            <button
+              className="tf-btn tf-btn-icon"
+              onClick={() => {
+                setBulkTrashConfirming(false);
+                setDeleteConfirmPos(null);
+              }}
+            >
+              취소
+            </button>
+          </span>
         </div>
       )}
 

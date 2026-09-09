@@ -1248,6 +1248,32 @@ select:focus-visible {
   background: #333;
 }
 
+/* 마우스 클릭 위치에 뜨는 휴지통 이동 확인 팝업(2026-09-09, "삭제를 클릭했을 때 이 메시지가
+   마우스를 클릭한 자리에서 팝업으로 뜨게 해줘" 요청) — 다중 선택 툴바의 기존 tf-confirm-row는
+   그대로 두고 이걸 "추가로" 띄우는 것이라 오버레이는 깔지 않는다(오버레이를 깔면 툴바 쪽 확인/
+   취소 버튼이 가려져 눌리지 않게 되므로, "이 기능에서도 확인 클릭을 할 수 있게" 요구사항과
+   충돌함). z-index는 컨텍스트 메뉴(1150)보다 위, 토스트(1250)보다 아래로 잡아 다른 오버레이와
+   겹쳐도 자연스럽게 위에 뜨도록 함. */
+.tf-trash-confirm-popup {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  background: #1c1c1c;
+  border: 1px solid #3f3f3f;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+
+.tf-trash-confirm-popup-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 /* 사이드바 폴더 트리 레이아웃 — ROADMAP 4단계 작업순서 6/8. 기본(휴대폰 PWA 포함 좁은 화면)은
    지금까지와 동일하게 사이드바 없이 단일 컬럼(.tf-app의 max-width: 720px)을 유지하고, 화면이
    넉넉한 데스크톱(확장 매니저 탭)에서만 폭을 넓혀 사이드바를 상시 표시한다(FolderSidebar.tsx
