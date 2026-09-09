@@ -12,9 +12,11 @@ import { useEffect } from 'react';
 
 interface ToastProps {
   label: string;
-  /** 버튼에 표시할 문구 — "실행취소" 또는 "다시 실행". */
-  actionLabel: string;
-  onAction: () => void;
+  /** 버튼에 표시할 문구 — "실행취소" 또는 "다시 실행". 생략하면 버튼 없이 문구만 보여준다
+   * (안내 전용 토스트, 2026-09-09 "동영상 우클릭 → 카카오톡/문자 공유" 요청으로 추가된 용도 —
+   * 되돌릴 동작이 없는 "복사됨" 안내라 실행취소/다시 실행 버튼이 의미가 없음). */
+  actionLabel?: string;
+  onAction?: () => void;
   onDismiss: () => void;
   /** 자동으로 사라지기까지의 시간(ms). 기본 6초 — 읽고 클릭하기엔 충분하되 화면에 오래 남지 않게. */
   durationMs?: number;
@@ -31,9 +33,11 @@ export default function Toast({ label, actionLabel, onAction, onDismiss, duratio
   return (
     <div className="tf-toast" role="status" aria-live="polite">
       <span className="tf-toast-label">{label}</span>
-      <button className="tf-btn tf-toast-action" onClick={onAction}>
-        {actionLabel}
-      </button>
+      {actionLabel && onAction && (
+        <button className="tf-btn tf-toast-action" onClick={onAction}>
+          {actionLabel}
+        </button>
+      )}
     </div>
   );
 }

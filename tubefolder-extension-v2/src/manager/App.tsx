@@ -585,7 +585,9 @@ export default function App() {
 
   // 실행취소(undo) — 토스트에 뭘 보여줄지만 이 컴포넌트가 들고 있고, 실제 스택 데이터는
   // undoStack.ts 모듈이 관리한다(2026-08-29 신규, ROADMAP-CHECKLIST.md 참고).
-  const [toast, setToast] = useState<{ label: string; kind: 'undo' | 'redo'; ts: number } | null>(null);
+  // kind: 'info'는 되돌릴 동작이 없는 단순 안내(2026-09-09, 영상 카카오톡/문자 공유 시
+  // "링크가 복사되었습니다" 안내용으로 추가) — 실행취소/다시 실행 버튼 없이 문구만 보여준다.
+  const [toast, setToast] = useState<{ label: string; kind: 'undo' | 'redo' | 'info'; ts: number } | null>(null);
   // 상시 실행취소/다시 실행 버튼(2026-09-03, 화면 하단 토스트 버튼의 시인성 문제로 상단에 신설) —
   // undoStack.ts는 React state가 아닌 모듈 전역이라 useSyncExternalStore로 구독해 개수만 반응형으로
   // 받는다. 개수가 0이면 버튼을 흐리게(disabled) 표시.
@@ -983,6 +985,45 @@ export default function App() {
     if (selectedIds.size === 0) return;
     setClipboard({ mode: 'cut', ids: Array.from(selectedIds) });
     closeContextMenu();
+  }
+
+  // 영상 우클릭 → 카카오톡/문자로 공유(2026-09-09 신규, 산들 요청). PC 환경에서는 카카오톡·문자
+  // 앱으로 완전 자동 전송할 방법이 없어(각각 별도 API 키/도메인 등록, OS 공유 대상 등록 여부가
+  // 불확실) 산들이 직접 고른 방식대로 "제목+링크를 클립보드에 복사 → 해당 앱을 열어 붙여넣기"로
+  // 처리한다. target은 안내 문구만 다르고 동작은 동일 — 어느 앱을 열지는 사용자가 직접 고른다.
+  async function handleShare(target: 'kakao' | 'sms') {
+    closeContextMenu();
+    if (!store || selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    const videos = ids.map((id) => store.nodes[id]).filter((n): n is VideoNode => !!n && isVideo(n));
+    if (videos.length === 0) return;
+    const text = videos.map((v) => `${v.name}\n${v.url}`).join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard API가 막혀 있을 때(권한·포커스 문제 등) execCommand로 대체 — 오래된 방식이지만
+      // 우클릭 메뉴 클릭 직후처럼 포커스가 애매한 상황에서 더 안정적으로 동작한다.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      document.body.removeChild(ta);
+      if (!ok) {
+        setError('클립보드 복사에 실패했습니다.');
+        return;
+      }
+    }
+    const appLabel = target === 'kakao' ? '카카오톡' : '문자 메시지 앱';
+    const itemLabel = videos.length === 1 ? `"${videos[0].name}"` : `영상 ${videos.length}개`;
+    setToast({ label: `${itemLabel} 링크가 복사되었습니다. ${appLabel}을 열어 붙여넣기(Ctrl+V) 하세요.`, kind: 'info', ts: Date.now() });
   }
 
   // 항목별 메뉴(우클릭 컨텍스트 메뉴와 동일한 목록, 2026-09-08 "2번 아이콘을 선택하면 복사/삭제/
@@ -3368,6 +3409,21 @@ export default function App() {
                 <button type="button" className="tf-context-menu-item" role="menuitem" onClick={handleCut}>
                   잘라내기
                 </button>
+                {/* "공유"는 선택 항목이 전부 영상일 때만 노출(2026-09-09, "동영상 우클릭 →
+                    카카오톡/문자 공유" 요청) — 폴더가 섞여 있으면 링크 공유 개념이 성립하지 않음.
+                    store가 아직 없을 리 없지만(이 메뉴 자체가 store 로드 후에만 열림) 타입 좁히기용
+                    안전장치로 옵셔널 체이닝. */}
+                {Array.from(selectedIds).every((id) => store?.nodes[id] && isVideo(store.nodes[id])) && (
+                  <>
+                    <div className="tf-context-menu-sep" role="separator" />
+                    <button type="button" className="tf-context-menu-item" role="menuitem" onClick={() => handleShare('kakao')}>
+                      💬 카카오톡으로 공유
+                    </button>
+                    <button type="button" className="tf-context-menu-item" role="menuitem" onClick={() => handleShare('sms')}>
+                      ✉️ 문자로 공유
+                    </button>
+                  </>
+                )}
                 <div className="tf-context-menu-sep" role="separator" />
               </>
             )}
@@ -3749,8 +3805,8 @@ export default function App() {
         <Toast
           key={toast.ts}
           label={toast.label}
-          actionLabel={toast.kind === 'undo' ? '실행취소' : '다시 실행'}
-          onAction={toast.kind === 'undo' ? performUndo : performRedo}
+          actionLabel={toast.kind === 'undo' ? '실행취소' : toast.kind === 'redo' ? '다시 실행' : undefined}
+          onAction={toast.kind === 'undo' ? performUndo : toast.kind === 'redo' ? performRedo : undefined}
           onDismiss={() => setToast(null)}
         />
       )}
