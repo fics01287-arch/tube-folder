@@ -13,21 +13,50 @@ import { youtubeUrl } from '../shared/youtubeSelectors';
 // 않게 되면서 PWA도 이제 동일하게 한도가 적용된다 — PWA에서 유료 여부를 확인할 방법이 이제 생겼으므로
 // (LicenseControl.tsx), 애초 계획대로 이 시점에 함께 켜진다(ROADMAP-CHECKLIST.md 참고).
 
-/** 사용자가 만든 폴더 수(루트·휴지통 제외) — 무료 티어 한도 체크용 */
+// (2026-09-09, "휴지통까지 파일로 인식해서 (개수를) 카운트하는 거 같은데, 파일 개수에서 휴지통은
+// 제외해" 요청) 휴지통 하위 트리 전체(재귀) id 집합 — 부모→자식 참조가 없어 parentId 역추적을
+// 반복해야 한다(emptyTrash()·addVideosToFolder()에 각자 따로 있던 동일한 BFS를 여기 한 곳으로
+// 모아 재사용 — countUserFolders·countVideos에도 같은 로직이 새로 필요해지면서 세 곳 이상
+// 중복되는 걸 막기 위함).
+function collectTrashedIds(data: TubeStoreData): Set<string> {
+  const inTrash = new Set<string>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const k in data.nodes) {
+      const n = data.nodes[k];
+      if (inTrash.has(n.id) || n.id === data.trashId) continue;
+      if (n.parentId === data.trashId || (n.parentId && inTrash.has(n.parentId))) {
+        inTrash.add(n.id);
+        grew = true;
+      }
+    }
+  }
+  return inTrash;
+}
+
+/** 사용자가 만든 폴더 수(루트·휴지통·휴지통 안의 폴더 전부 제외) — 무료 티어 한도 체크용.
+ * 휴지통에 들어간 폴더는 사실상 삭제된 것과 같으니 한도 계산에 넣지 않는다(2026-09-09 수정 —
+ * 예전엔 휴지통 안 폴더도 그대로 셌음). */
 function countUserFolders(data: TubeStoreData): number {
+  const inTrash = collectTrashedIds(data);
   let n = 0;
   for (const k in data.nodes) {
     const node = data.nodes[k];
-    if (node.type === 'folder' && node.id !== data.rootId && node.id !== data.trashId) n++;
+    if (node.type === 'folder' && node.id !== data.rootId && node.id !== data.trashId && !inTrash.has(node.id)) n++;
   }
   return n;
 }
 
-/** 저장소 전체(휴지통 포함)의 영상 수 — 무료 티어 한도 체크용 */
+/** 휴지통을 제외한 영상 수 — 무료 티어 한도 체크용(2026-09-09 수정 — 예전엔 "저장소 전체(휴지통
+ * 포함)"를 의도적으로 셌으나, 휴지통에 영상을 많이 모아두면 실제로는 여유가 있는데도 무료 한도에
+ * 먼저 걸리는 문제가 있어 산들 요청대로 휴지통 안 영상은 더 이상 세지 않는다). */
 function countVideos(data: TubeStoreData): number {
+  const inTrash = collectTrashedIds(data);
   let n = 0;
   for (const k in data.nodes) {
-    if (data.nodes[k].type === 'video') n++;
+    const node = data.nodes[k];
+    if (node.type === 'video' && !inTrash.has(node.id)) n++;
   }
   return n;
 }
@@ -192,22 +221,9 @@ export async function addVideosToFolder(
 
   const existingVideoIds = new Set<string>();
   if (!opts.skipDuplicateCheck) {
-    // 휴지통 하위 트리 전체 수집(emptyTrash()와 동일한 BFS — 부모→자식 참조가 없어 parentId
-    // 역추적을 반복해야 함). 이 안에 있는 영상은 아래 existingVideoIds에서 제외한다.
-    const inTrash = new Set<string>();
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const k in data.nodes) {
-        const n = data.nodes[k];
-        if (inTrash.has(n.id) || n.id === data.trashId) continue;
-        if (n.parentId === data.trashId || (n.parentId && inTrash.has(n.parentId))) {
-          inTrash.add(n.id);
-          grew = true;
-        }
-      }
-    }
-
+    // 휴지통 안에 있는 영상은 아래 existingVideoIds(전역 중복 판정 기준)에서 제외한다 — 그래야
+    // 휴지통으로 옮긴 영상과 videoId가 같은 걸 다시 가져오려 할 때 "이미 있다"며 막히지 않는다.
+    const inTrash = collectTrashedIds(data);
     for (const k in data.nodes) {
       const n = data.nodes[k];
       if (n.type === 'video' && n.videoId && !inTrash.has(n.id)) existingVideoIds.add(n.videoId);
@@ -299,20 +315,7 @@ export async function emptyTrash(): Promise<number> {
   const t = now();
   if (!data.tombstones) data.tombstones = {};
 
-  // 휴지통 자손 전체 수집(부모→자식 참조가 없으므로 parentId 역추적을 반복)
-  const doomed = new Set<string>();
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const k in data.nodes) {
-      const n = data.nodes[k];
-      if (doomed.has(n.id) || n.id === data.trashId) continue;
-      if (n.parentId === data.trashId || (n.parentId && doomed.has(n.parentId))) {
-        doomed.add(n.id);
-        grew = true;
-      }
-    }
-  }
+  const doomed = collectTrashedIds(data);
 
   for (const id of doomed) {
     delete data.nodes[id];
