@@ -1787,13 +1787,17 @@ export default function App() {
     setImporting(true);
     setImportStatus('폴더에 추가하는 중...');
     try {
+      // (2026-09-09, "재생목록 가져오기도 실행취소/다시 실행이 가능하게 해달라. 기존에 만들어
+      // 두었던 버튼을 쓸 수 있게 해달라" 요청) addVideosToFolder가 실제로 저장하기 전 시점을
+      // 미리 떠 둔다 — 이 스냅샷을 아래에서 이름 기준 중복 판정에도 그대로 재사용하고(예전엔
+      // 별도로 한 번 더 load()했음), 성공하면 undo 스냅샷으로도 쓴다.
+      const before = await load();
       let toImport = videos;
       const duplicateNames: string[] = [];
       if (dedupeByName) {
-        const data = await load();
         const existingNames = new Set<string>();
-        for (const k in data.nodes) {
-          const n = data.nodes[k];
+        for (const k in before.nodes) {
+          const n = before.nodes[k];
           if (n.type === 'video' && n.parentId === folderId) existingNames.add(n.name);
         }
         toImport = [];
@@ -1817,10 +1821,15 @@ export default function App() {
       );
 
       // addVideosToFolder()는 실제로 추가된 게 하나라도 있을 때만 저장한다(전부 건너뛴 경우
-      // 저장 자체가 없으니 스냅샷도 그대로 유효 — added===0이면 비울 필요 없음).
+      // 저장 자체가 없으니 스냅샷도 그대로 유효 — added===0이면 스택에 쌓을 것도 없음).
+      // 예전엔 여기서 clearUndo()로 스택을 통째로 비웠는데(가져오기가 아직 undo 추적 대상이
+      // 아니었을 때의 정책) — 이제는 이름변경·이동 등 다른 작업과 동일하게 pushUndo로 스택에
+      // 쌓아서, 상단 "↩ 실행취소"/"↪ 다시 실행" 버튼과 Ctrl+Z/Ctrl+Y로 그대로 되돌릴 수 있다.
       if (result.added > 0) {
-        clearUndo();
-        setToast(null);
+        const folderName = before.nodes[folderId]?.name ?? '';
+        const label = `"${folderName}" 폴더에 영상 ${result.added}개 가져오기`;
+        pushUndo({ label, snapshot: before });
+        setToast({ label, kind: 'undo', ts: Date.now() });
       }
       await refresh(currentFolderId);
       scheduleAutoSync();
