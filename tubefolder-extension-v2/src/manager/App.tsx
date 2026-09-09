@@ -1838,6 +1838,19 @@ export default function App() {
 
         {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId !== store.trashId && (
           <span className="tf-row-actions">
+            {/* (2026-09-09, "폴더에도 적용해줘" 요청) 영상과 동일하게 폴더도 체크박스로 다중 선택 가능 — Shift+클릭 범위 선택 포함, toggleSelect 재사용. */}
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
             <button
               className="tf-btn tf-btn-icon"
               onClick={() => setIconPickerFolderId(node.id)}
@@ -1878,6 +1891,19 @@ export default function App() {
         {/* (신설 2026-08-30, 작업순서 1/8) 휴지통 안에서는 이동/휴지통행 대신 전용 복원 버튼 하나만 노출 */}
         {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId === store.trashId && (
           <span className="tf-row-actions">
+            {/* (2026-09-09, "폴더에도 적용해줘" 요청) 영상과 동일하게 폴더도 체크박스로 다중 선택 가능 — Shift+클릭 범위 선택 포함, toggleSelect 재사용. */}
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
             <button
               className="tf-btn tf-btn-icon"
               onClick={() => handleRestore(node.id)}
@@ -2035,6 +2061,19 @@ export default function App() {
 
         {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId !== store.trashId && (
           <span className="tf-tile-actions">
+            {/* (2026-09-09, "폴더에도 적용해줘" 요청) 영상과 동일하게 폴더도 체크박스로 다중 선택 가능 — Shift+클릭 범위 선택 포함, toggleSelect 재사용. */}
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
             <button
               className="tf-btn tf-btn-icon"
               onClick={() => setIconPickerFolderId(node.id)}
@@ -2075,6 +2114,19 @@ export default function App() {
         {/* (신설 2026-08-30, 작업순서 1/8) 휴지통 안에서는 이동/휴지통행 대신 전용 복원 버튼 하나만 노출 */}
         {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId === store.trashId && (
           <span className="tf-tile-actions">
+            {/* (2026-09-09, "폴더에도 적용해줘" 요청) 영상과 동일하게 폴더도 체크박스로 다중 선택 가능 — Shift+클릭 범위 선택 포함, toggleSelect 재사용. */}
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
             <button
               className="tf-btn tf-btn-icon"
               onClick={() => handleRestore(node.id)}
@@ -2188,6 +2240,19 @@ export default function App() {
         )}
         {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId !== store.trashId && (
           <span className="tf-row-actions">
+            {/* (2026-09-09, "폴더에도 적용해줘" 요청) 영상과 동일하게 폴더도 체크박스로 다중 선택 가능 — Shift+클릭 범위 선택 포함, toggleSelect 재사용. */}
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
             <button
               className="tf-btn tf-btn-icon"
               onClick={() => setIconPickerFolderId(node.id)}
@@ -2228,6 +2293,19 @@ export default function App() {
         {/* (신설 2026-08-30, 작업순서 1/8) 휴지통 안에서는 이동/휴지통행 대신 전용 복원 버튼 하나만 노출 */}
         {isFolder && !isTrash && editingId !== node.id && deletingId !== node.id && currentFolderId === store.trashId && (
           <span className="tf-row-actions">
+            {/* (2026-09-09, "폴더에도 적용해줘" 요청) 영상과 동일하게 폴더도 체크박스로 다중 선택 가능 — Shift+클릭 범위 선택 포함, toggleSelect 재사용. */}
+            <input
+              type="checkbox"
+              className="tf-select-checkbox"
+              checked={selectedIds.has(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                checkboxShiftRef.current = e.shiftKey;
+              }}
+              onChange={() => toggleSelect(node.id, checkboxShiftRef.current)}
+              title="선택"
+              aria-label={`"${node.name}" 선택`}
+            />
             <button
               className="tf-btn tf-btn-icon"
               onClick={() => handleRestore(node.id)}
