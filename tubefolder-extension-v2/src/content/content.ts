@@ -4,8 +4,9 @@
 // 반영한다(content script도 "storage" 권한으로 chrome.storage.local에 접근 가능).
 
 import { showMiniPopup } from './miniPopup';
-import { createFolder, renameFolder, trashNode, addVideosToFolder } from '../storage/folderOps';
+import { createFolder, renameFolder, trashNode, addVideosToFolder, folderChildren } from '../storage/folderOps';
 import { fetchPlaylistWithAuth, PlaylistImportError } from '../storage/playlistImport';
+import { load } from '../storage/storage';
 import { youtubeUrl } from '../shared/youtubeSelectors';
 import { FREE_VIDEO_LIMIT } from '../license/licenseEngine';
 import type { BackgroundToContentMessage, FetchPlaylistDataApiResponse } from '../shared/messages';
@@ -143,7 +144,22 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
           const trimmed = name.trim();
           if (!trimmed) throw new Error('폴더 이름을 입력하세요.');
           if (videos.length === 0) throw new Error('가져올 영상이 없습니다.');
-          const folder = await createFolder(parentId, trimmed);
+          // (2026-09-09, "1970 폴더에 1개 파일이 있었는데 가져오기 하면서 1970(3) 폴더가 생기고
+          // 기존 1970 폴더의 파일도 다시 안 불러와진다" 제보) createFolder는 이름이 겹치면
+          // uniqueName으로 "1970(2)", "1970(3)"...처럼 매번 새 폴더를 만든다 — 수동으로 "새 폴더"를
+          // 만들 때는 맞는 동작이지만, 같은 재생목록을 다시 가져올 때는 그때마다 다른 폴더로 흩어져
+          // 버려서 문제였다(게다가 addVideosToFolder의 전역 중복 방지 때문에, 원래 "1970" 폴더에
+          // 이미 있던 영상은 새로 생긴 "1970(3)" 폴더 기준으로는 "다른 폴더에 이미 있음"으로 보여
+          // 아예 어느 폴더에도 다시 추가되지 않았음). 같은 위치에 이름이 정확히 같은 폴더가 이미
+          // 있으면 새로 만들지 않고 그 폴더를 그대로 재사용해, 빠진 영상만 채워 넣도록 한다.
+          const data = await load();
+          let targetParentId = parentId;
+          const target = data.nodes[targetParentId];
+          if (!target || target.type !== 'folder' || targetParentId === data.trashId) {
+            targetParentId = data.rootId;
+          }
+          const existingFolder = folderChildren(data, targetParentId).find((f) => f.name === trimmed);
+          const folder = existingFolder ?? (await createFolder(parentId, trimmed));
           const result = await addVideosToFolder(
             folder.id,
             videos.map((v) => ({
