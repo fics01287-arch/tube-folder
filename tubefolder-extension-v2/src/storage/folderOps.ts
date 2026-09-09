@@ -166,7 +166,22 @@ export interface ImportVideosResult {
  * addVideoToFolder(storage.ts)를 반복 호출하지 않는 이유: 호출마다 load+save가 일어나
  * 영상 수가 많은 재생목록에서는 왕복이 그대로 배가되기 때문.
  */
-export async function addVideosToFolder(folderId: string, videos: ImportVideoInput[]): Promise<ImportVideosResult> {
+export interface AddVideosToFolderOptions {
+  /**
+   * (2026-09-09, "같은 이름 폴더에 가져올 때는 이름 기준으로만 중복을 걸러라"/"새 폴더로 만들
+   * 때는 중복 여부를 아예 따지지 마라" 요청) true면 아래 videoId 기반 전역 중복 검사를 완전히
+   * 건너뛰고 videos를 그대로 다 추가한다(라이선스 개수 한도 검사만 그대로 적용). content.ts의
+   * 재생목록 가져오기 흐름이 자체적으로(이름 기준, 또는 아예 검사 없이) 무엇을 넣을지 이미 걸러온
+   * 경우에 쓴다 — 기본값 false로, 기존 호출부(매니저 탭 URL 입력창 등)는 그대로 전역 dedupe.
+   */
+  skipDuplicateCheck?: boolean;
+}
+
+export async function addVideosToFolder(
+  folderId: string,
+  videos: ImportVideoInput[],
+  opts: AddVideosToFolderOptions = {}
+): Promise<ImportVideosResult> {
   const data = await load();
 
   let targetId = folderId;
@@ -175,10 +190,11 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
     targetId = data.rootId;
   }
 
-  // 휴지통 하위 트리 전체 수집(emptyTrash()와 동일한 BFS — 부모→자식 참조가 없어 parentId
-  // 역추적을 반복해야 함). 이 안에 있는 영상은 아래 existingVideoIds에서 제외한다.
-  const inTrash = new Set<string>();
-  {
+  const existingVideoIds = new Set<string>();
+  if (!opts.skipDuplicateCheck) {
+    // 휴지통 하위 트리 전체 수집(emptyTrash()와 동일한 BFS — 부모→자식 참조가 없어 parentId
+    // 역추적을 반복해야 함). 이 안에 있는 영상은 아래 existingVideoIds에서 제외한다.
+    const inTrash = new Set<string>();
     let grew = true;
     while (grew) {
       grew = false;
@@ -191,12 +207,11 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
         }
       }
     }
-  }
 
-  const existingVideoIds = new Set<string>();
-  for (const k in data.nodes) {
-    const n = data.nodes[k];
-    if (n.type === 'video' && n.videoId && !inTrash.has(n.id)) existingVideoIds.add(n.videoId);
+    for (const k in data.nodes) {
+      const n = data.nodes[k];
+      if (n.type === 'video' && n.videoId && !inTrash.has(n.id)) existingVideoIds.add(n.videoId);
+    }
   }
 
   const siblings = childrenOf(data, targetId).filter((n) => n.id !== data.trashId);
@@ -212,7 +227,7 @@ export async function addVideosToFolder(folderId: string, videos: ImportVideoInp
   let videoCount = countVideos(data);
 
   for (const v of videos) {
-    if (existingVideoIds.has(v.videoId)) {
+    if (!opts.skipDuplicateCheck && existingVideoIds.has(v.videoId)) {
       skipped++;
       continue;
     }

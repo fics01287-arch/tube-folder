@@ -2,7 +2,11 @@
 // React 미사용(vanilla TS + Shadow DOM): 콘텐츠 스크립트가 유튜브 자체 프레임워크와 같은
 // 페이지에서 돌기 때문에, Shadow DOM으로 스타일을 완전히 격리하고 번들 크기도 최소화한다.
 
-export type MiniPopupMode = 'prompt' | 'confirm';
+// (2026-09-09, "같은 이름 폴더가 있으면 기존 폴더에 가져올지 새 폴더를 만들지 먼저 물어보고,
+// 결과를 팝업으로 보여주고, 원하면 중복 목록도 보여줘" 요청으로 'list' 모드 신설) 'list'는
+// 입력창 대신 스크롤 가능한 목록(items)을 보여주는 단순 알림용 — 제외된 중복 파일 이름처럼
+// 여러 줄을 보여줘야 할 때 쓴다.
+export type MiniPopupMode = 'prompt' | 'confirm' | 'list';
 
 export interface MiniPopupOptions {
   mode: MiniPopupMode;
@@ -20,6 +24,18 @@ export interface MiniPopupOptions {
   cancelLabel?: string;
   /** 삭제처럼 되돌리기 성격이 다른 동작을 강조할 때 확인 버튼을 빨간색으로 */
   danger?: boolean;
+  /** mode:'list' 전용 — 스크롤 목록에 한 줄씩 표시할 항목들. */
+  items?: string[];
+  /**
+   * (신설) 취소(cancel) 버튼 자리를 "진짜 취소"가 아니라 제3의 선택지로 쓰고 싶을 때 지정.
+   * 있으면 취소 버튼 클릭 시 팝업을 그냥 닫는 대신 이 콜백을 실행한다(confirm 버튼과 동일하게
+   * 실패 시 에러 메시지를 보여주고 팝업은 유지). 예: "이미 같은 이름 폴더가 있습니다" 선택
+   * 팝업에서 확인=기존 폴더 재사용, 취소 자리=새 폴더 만들기. 없으면(기존 모든 호출부) 그냥 닫는
+   * 예전 동작 그대로.
+   */
+  onSecondary?: () => Promise<void> | void;
+  /** 취소/보조 버튼 자체를 아예 숨긴다(확인 버튼 하나만 있는 단순 알림 팝업용). */
+  hideCancel?: boolean;
   onSubmit: (value: string) => Promise<void> | void;
 }
 
@@ -61,6 +77,13 @@ const CSS = `
   .tf-btn-confirm:disabled { opacity: 0.6; cursor: default; }
   .tf-btn-danger { background: #cc0000; }
   .tf-btn-danger:hover { background: #a80000; }
+  .tf-list-scroll {
+    max-height: 240px; overflow-y: auto;
+    border: 1px solid #eee; border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .tf-dup-list { margin: 0; padding: 8px 8px 8px 24px; font-size: 12px; line-height: 1.6; color: #333; }
+  .tf-dup-list li { word-break: break-all; }
 `;
 
 let activeHost: HTMLElement | null = null;
@@ -133,6 +156,18 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
     input.value = opts.initialValue || '';
     input.maxLength = 200;
     box.appendChild(input);
+  } else if (opts.mode === 'list') {
+    const listWrap = document.createElement('div');
+    listWrap.className = 'tf-list-scroll';
+    const ul = document.createElement('ul');
+    ul.className = 'tf-dup-list';
+    for (const item of opts.items || []) {
+      const li = document.createElement('li');
+      li.textContent = item;
+      ul.appendChild(li);
+    }
+    listWrap.appendChild(ul);
+    box.appendChild(listWrap);
   }
 
   const errorEl = document.createElement('div');
@@ -146,28 +181,55 @@ export function showMiniPopup(opts: MiniPopupOptions): void {
   cancelBtn.type = 'button';
   cancelBtn.className = 'tf-btn tf-btn-cancel';
   cancelBtn.textContent = opts.cancelLabel || '취소';
-  cancelBtn.addEventListener('click', () => closeMiniPopup());
 
   const confirmBtn = document.createElement('button');
   confirmBtn.type = 'button';
   confirmBtn.className = 'tf-btn tf-btn-confirm' + (opts.danger ? ' tf-btn-danger' : '');
   confirmBtn.textContent = opts.confirmLabel || (opts.mode === 'prompt' ? '만들기' : '확인');
 
+  // 이 특정 showMiniPopup() 호출이 만든 host를 기억해뒀다가, onSubmit/onSecondary가 끝난 뒤
+  // "그 사이 다른 팝업으로 안 바뀌었을 때만" 닫는다 — onSubmit/onSecondary 안에서 다음 단계로
+  // showMiniPopup()을 또 호출해 팝업을 이어가는 경우(2026-09-09, 재생목록 가져오기 흐름의
+  // "폴더 선택→결과→중복 목록" 다단계 팝업), 그 새 팝업이 열리자마자 여기서 다시 닫아버리는
+  // 경쟁 상태를 막기 위함. 기존 호출부(입력 하나로 끝나는 단순 확인/생성)는 onSubmit이 새 팝업을
+  // 안 열므로 activeHost가 그대로라 지금까지와 동일하게 동작한다.
   const submit = async (): Promise<void> => {
     const value = input ? input.value : '';
     confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
     errorEl.textContent = '';
     try {
       await opts.onSubmit(value);
-      closeMiniPopup();
+      if (activeHost === host) closeMiniPopup();
     } catch (e) {
       confirmBtn.disabled = false;
+      cancelBtn.disabled = false;
       errorEl.textContent = e instanceof Error ? e.message : String(e);
     }
   };
   confirmBtn.addEventListener('click', submit);
 
-  actions.appendChild(cancelBtn);
+  cancelBtn.addEventListener('click', async () => {
+    if (!opts.onSecondary) {
+      closeMiniPopup();
+      return;
+    }
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    errorEl.textContent = '';
+    try {
+      await opts.onSecondary();
+      if (activeHost === host) closeMiniPopup();
+    } catch (e) {
+      confirmBtn.disabled = false;
+      cancelBtn.disabled = false;
+      errorEl.textContent = e instanceof Error ? e.message : String(e);
+    }
+  });
+
+  if (!opts.hideCancel) {
+    actions.appendChild(cancelBtn);
+  }
   actions.appendChild(confirmBtn);
   box.appendChild(actions);
   backdrop.appendChild(box);

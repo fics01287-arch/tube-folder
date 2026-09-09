@@ -122,6 +122,92 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
         }
       }
 
+      // (2026-09-09, "이미 같은 이름 폴더가 있으면 물어보고, 기존 폴더 선택 시 이름 겹치는
+      // 파일만 빼고 가져오고, 새 폴더 선택 시 전체를 그대로 가져오고, 끝나면 결과를 팝업으로
+      // 보여줘" 요청) 실제 추가 + 결과 팝업 표시를 한 곳에 모아 아래 두 선택지(기존 폴더 재사용/
+      // 새 폴더 생성) 모두에서 재사용한다. dedupeByName이 true면(=기존 폴더를 선택한 경우) 그
+      // 폴더에 이미 있는 영상과 "이름이 정확히 같은" 항목만 걸러내고, false면(=새 폴더를 만든
+      // 경우) 요청대로 중복 여부를 아예 따지지 않고 전부 넣는다. addVideosToFolder의 videoId
+      // 기준 전역 중복 방지(휴지통 제외, 어제 수정분)는 이 흐름에서는 쓰지 않는다 — 여기서 보여줄
+      // "총 N개 중 중복 M개 제외" 카운트가 이름 기준 필터링과 정확히 일치해야 하는데, 전역 dedupe가
+      // 추가로 끼어들면 두 기준이 서로 다른 이유로 건너뛴 항목이 섞여 카운트가 안 맞기 때문
+      // (skipDuplicateCheck: true로 완전히 우회).
+      const finishImport = async (folderId: string, dedupeByName: boolean): Promise<void> => {
+        let toImport = videos;
+        const duplicateNames: string[] = [];
+
+        if (dedupeByName) {
+          const data = await load();
+          const existingNames = new Set<string>();
+          for (const k in data.nodes) {
+            const n = data.nodes[k];
+            if (n.type === 'video' && n.parentId === folderId) existingNames.add(n.name);
+          }
+          toImport = [];
+          for (const v of videos) {
+            if (existingNames.has(v.title)) duplicateNames.push(v.title);
+            else toImport.push(v);
+          }
+        }
+
+        const result = await addVideosToFolder(
+          folderId,
+          toImport.map((v) => ({
+            url: youtubeUrl.watch(v.videoId),
+            videoId: v.videoId,
+            title: v.title,
+            channel: v.channel,
+            kind,
+            duration: v.duration,
+            playlistAddedAt: v.playlistAddedAt
+          })),
+          { skipDuplicateCheck: true }
+        );
+
+        // 무료 티어 영상 개수 한도(FREE_VIDEO_LIMIT)에 걸린 경우는 "이름이 같아 건너뜀"과 전혀
+        // 다른 상황이라(한도 초과분은 몇 번을 다시 시도해도 절대 추가되지 않음) 결과 팝업 대신
+        // 별도 에러로 명확히 알린다(기존 동작 유지).
+        if (result.limitReached) {
+          flashBadge('🔒', '#cc8800');
+          throw new Error(
+            `무료 버전 영상 개수 한도(${FREE_VIDEO_LIMIT}개)에 도달해 ${result.added}개만 추가하고 나머지 ${result.skipped}개는 건너뛰었습니다. 기존 영상을 정리하거나 업그레이드 후 다시 시도해 주세요.`
+          );
+        }
+
+        flashBadge(result.added > 0 ? `+${result.added}` : '0', result.added > 0 ? '#22a722' : '#888888');
+
+        const finalData = await load();
+        let finalCount = 0;
+        for (const k in finalData.nodes) {
+          const n = finalData.nodes[k];
+          if (n.type === 'video' && n.parentId === folderId) finalCount++;
+        }
+
+        const dupCount = duplicateNames.length;
+        showMiniPopup({
+          mode: 'confirm',
+          title: '가져오기 완료',
+          message: `총 ${videos.length}개 중 중복 ${dupCount}개를 제외하고 ${result.added}개를 가져왔습니다. 현재 폴더에는 총 ${finalCount}개의 파일이 있습니다.`,
+          confirmLabel: '확인',
+          cancelLabel: '중복 목록 보기',
+          hideCancel: dupCount === 0,
+          onSubmit: () => {},
+          onSecondary:
+            dupCount > 0
+              ? () => {
+                  showMiniPopup({
+                    mode: 'list',
+                    title: `제외된 중복 파일 (${dupCount}개)`,
+                    items: duplicateNames,
+                    confirmLabel: '닫기',
+                    hideCancel: true,
+                    onSubmit: () => {}
+                  });
+                }
+              : undefined
+        });
+      };
+
       showMiniPopup({
         mode: 'prompt',
         title: '재생목록 가져오기',
@@ -145,13 +231,9 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
           if (!trimmed) throw new Error('폴더 이름을 입력하세요.');
           if (videos.length === 0) throw new Error('가져올 영상이 없습니다.');
           // (2026-09-09, "1970 폴더에 1개 파일이 있었는데 가져오기 하면서 1970(3) 폴더가 생기고
-          // 기존 1970 폴더의 파일도 다시 안 불러와진다" 제보) createFolder는 이름이 겹치면
-          // uniqueName으로 "1970(2)", "1970(3)"...처럼 매번 새 폴더를 만든다 — 수동으로 "새 폴더"를
-          // 만들 때는 맞는 동작이지만, 같은 재생목록을 다시 가져올 때는 그때마다 다른 폴더로 흩어져
-          // 버려서 문제였다(게다가 addVideosToFolder의 전역 중복 방지 때문에, 원래 "1970" 폴더에
-          // 이미 있던 영상은 새로 생긴 "1970(3)" 폴더 기준으로는 "다른 폴더에 이미 있음"으로 보여
-          // 아예 어느 폴더에도 다시 추가되지 않았음). 같은 위치에 이름이 정확히 같은 폴더가 이미
-          // 있으면 새로 만들지 않고 그 폴더를 그대로 재사용해, 빠진 영상만 채워 넣도록 한다.
+          // 기존 1970 폴더의 파일도 다시 안 불러와진다" 제보로 시작된 로직 — 이번 요청으로 한 단계
+          // 더 확장) 같은 위치에 이름이 정확히 같은 폴더가 이미 있으면, 예전처럼 조용히 재사용하지
+          // 않고 사용자에게 먼저 물어본다: 기존 폴더에 합칠지, 아니면 새 폴더를 따로 만들지.
           const data = await load();
           let targetParentId = parentId;
           const target = data.nodes[targetParentId];
@@ -159,34 +241,28 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
             targetParentId = data.rootId;
           }
           const existingFolder = folderChildren(data, targetParentId).find((f) => f.name === trimmed);
-          const folder = existingFolder ?? (await createFolder(parentId, trimmed));
-          const result = await addVideosToFolder(
-            folder.id,
-            videos.map((v) => ({
-              url: youtubeUrl.watch(v.videoId),
-              videoId: v.videoId,
-              title: v.title,
-              channel: v.channel,
-              kind,
-              duration: v.duration,
-              playlistAddedAt: v.playlistAddedAt
-            }))
-          );
-          // 무료 티어 영상 개수 한도(FREE_VIDEO_LIMIT)에 걸린 경우는 "이미 보관 중이라 건너뜀"과
-          // 전혀 다른 상황이다 — 한도 초과분은 몇 번을 다시 시도해도 절대 추가되지 않으므로, 배지
-          // 한 글자로는 원인이 전혀 전달되지 않아 "가져오기가 그냥 안 됨" 버그처럼 보인다(실측:
-          // 2026-09-07, 366개짜리 재생목록을 가져왔는데 폴더가 텅 빈 채로 남았던 사례 — 원인은
-          // 이전 테스트로 이미 저장된 영상 수가 한도를 넘어서 이번 배치 전체가 조용히 건너뛰어진 것).
-          // 팝업의 에러 영역(errorEl)에 사유를 명확히 남겨 재작업 없이 바로 원인을 알 수 있게 한다.
-          if (result.limitReached) {
-            flashBadge('🔒', '#cc8800');
-            throw new Error(
-              `무료 버전 영상 개수 한도(${FREE_VIDEO_LIMIT}개)에 도달해 ${result.added}개만 추가하고 나머지 ${result.skipped}개는 건너뛰었습니다. "${trimmed}" 폴더는 이미 만들어졌습니다. 기존 영상을 정리하거나 업그레이드 후 다시 시도해 주세요.`
-            );
+
+          if (existingFolder) {
+            showMiniPopup({
+              mode: 'confirm',
+              title: '같은 이름의 폴더가 이미 있습니다',
+              message: `"${trimmed}" 폴더가 이미 있습니다. 이 폴더에 가져올까요?`,
+              note: '기존 폴더를 선택하면 이미 있는 것과 이름이 같은 영상은 제외하고 나머지만 추가합니다. 새 폴더를 만들면 중복 여부와 상관없이 재생목록 전체를 그대로 가져옵니다.',
+              confirmLabel: '기존 폴더에 가져오기',
+              cancelLabel: '새 폴더 만들기',
+              onSecondary: async () => {
+                const newFolder = await createFolder(parentId, trimmed);
+                await finishImport(newFolder.id, false);
+              },
+              onSubmit: async () => {
+                await finishImport(existingFolder.id, true);
+              }
+            });
+            return;
           }
-          // 이미 보관 중인 영상은 건너뛰는 것이 정상 동작(전역 중복 방지, ROADMAP-CHECKLIST.md
-          // 참고)이라 added가 0이어도 에러로 취급하지 않는다 — 배지 색으로만 구분해서 알린다.
-          flashBadge(result.added > 0 ? `+${result.added}` : '0', result.added > 0 ? '#22a722' : '#888888');
+
+          const folder = await createFolder(parentId, trimmed);
+          await finishImport(folder.id, false);
         }
       });
     })();
