@@ -1957,6 +1957,23 @@ export default function App() {
   useEscapeClose(!!importResult && !importDupListOpen, () => setImportResult(null));
   useEscapeClose(importDupListOpen, () => setImportDupListOpen(false));
 
+  // (2026-09-09, "이 상태[실행취소 토스트가 떠 있는 상태]에서 빈 공간을 클릭하면 표시한 버튼이
+  // 사라지게 해줘" 요청) 토스트는 다른 모달들과 달리 배경을 덮는 오버레이가 없는(비침해적) UI라
+  // .tf-sync-overlay식 "오버레이 클릭=닫기" 패턴을 그대로 쓸 수 없다 — 대신 document 전체에
+  // mousedown을 한 번 걸어, 토스트 자신(실행취소/다시 실행 버튼 포함) 바깥을 클릭하면 닫는다.
+  // 토스트가 떠 있을 때만 리스너를 등록해(불필요한 상시 리스너 방지) 자동 사라짐(6초) 전에
+  // 사용자가 화면 다른 곳을 클릭해 다음 작업으로 넘어가면 조용히 같이 사라지도록 한다.
+  useEffect(() => {
+    if (!toast) return;
+    function onDocumentMouseDown(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('.tf-toast')) return;
+      setToast(null);
+    }
+    document.addEventListener('mousedown', onDocumentMouseDown);
+    return () => document.removeEventListener('mousedown', onDocumentMouseDown);
+  }, [toast]);
+
   if (!store || !currentFolder) {
     return (
       <div className="tf-app">
