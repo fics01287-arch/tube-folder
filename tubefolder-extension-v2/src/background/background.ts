@@ -19,6 +19,7 @@ import {
   getCachedLicense,
   isLicenseConfigured,
   isLicenseKeyGranted,
+  LicenseLimitError,
   LicenseState,
   PADDLE_VERIFY_ENDPOINT,
   writeLicenseState
@@ -246,6 +247,14 @@ chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _send
     return undefined; // 동기 처리 — 응답 없음
   }
 
+  // 유튜브 페이지의 "🔒 무료 버전 제한" 미니 팝업에서 "PRO 알아보기"를 눌렀을 때 — content
+  // script는 chrome.tabs 권한이 없어 매니저 탭을 직접 열 수 없으므로 이미 있는 openManager()에
+  // 위임한다(2026-09-10, "배지만 뜨고 안내가 없다" 제보로 신설).
+  if (message && message.type === 'TF_OPEN_MANAGER') {
+    openManager();
+    return undefined;
+  }
+
   if (message && message.type === 'TF_FETCH_PLAYLIST_DATA_API') {
     // chrome.identity는 콘텐츠 스크립트에 없어 여기(서비스워커)에서 토큰 발급부터 fetch까지
     // 전부 처리한 뒤 결과만 돌려준다 — youtubeDataApi.ts 상단 주석 참고. MV3 규칙상 비동기
@@ -361,12 +370,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       flashBadge('+1', '#22a722');
     } catch (e) {
       console.error('[튜브폴더] 추가 실패:', e);
-      flashBadge('!', '#cc0000');
+      // 무료 버전 영상 개수 한도에 걸린 경우는 배지만 깜빡이고 끝내면 왜 안 됐는지 전혀 알 수
+      // 없다(2026-09-10, "배지만 뜨고 안내가 없다" 제보) — 매니저 탭의 LicenseLimitNotice.tsx와
+      // 같은 취지로, 유튜브 페이지 위에 이유를 알려주는 미니 팝업을 띄운다.
+      if (e instanceof LicenseLimitError) {
+        sendPromptToTab(tab, { type: 'TF_SHOW_LICENSE_LIMIT', message: e.message });
+      } else {
+        flashBadge('!', '#cc0000');
+      }
     }
   }
 });
 
-function sendPromptToTab(tab: chrome.tabs.Tab | undefined, message: import('../shared/messages').ShowFolderPromptMessage): void {
+function sendPromptToTab(tab: chrome.tabs.Tab | undefined, message: import('../shared/messages').BackgroundToContentMessage): void {
   if (!tab || tab.id == null) return;
   chrome.tabs.sendMessage(tab.id, message, () => {
     if (chrome.runtime.lastError) {

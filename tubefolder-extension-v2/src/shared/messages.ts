@@ -35,6 +35,22 @@ export interface FlashBadgeMessage {
   color: string;
 }
 
+/** background → content: 유튜브 페이지에서 한 동작(예: "이 동영상만 폴더에 추가")이 무료 버전
+ * 한도(LicenseLimitError)에 걸렸을 때, 배지만 깜빡이고 끝내는 대신 이유를 알려주는 미니 팝업을
+ * 띄우라는 지시(2026-09-10, "배지만 뜨고 안내가 없다" 제보로 신설 — 매니저 탭의 LicenseLimitNotice.tsx
+ * 팝업과 같은 취지). message는 LicenseLimitError.message를 그대로 담는다. */
+export interface ShowLicenseLimitMessage {
+  type: 'TF_SHOW_LICENSE_LIMIT';
+  message: string;
+}
+
+/** content → background: 미니 팝업의 "PRO 알아보기" 버튼 클릭 — content script는 chrome.tabs에
+ * 접근할 수 없어(권한 자체가 없음), 매니저 탭을 열고 포커스하는 실제 동작은 background(이미
+ * openManager() 보유)에 위임한다. */
+export interface OpenManagerMessage {
+  type: 'TF_OPEN_MANAGER';
+}
+
 /** content → background: 공식 YouTube Data API로 재생목록을 가져와 달라는 요청(2026-09-08 신설).
  * chrome.identity가 콘텐츠 스크립트에 없어 background(서비스워커)에게 실제 fetch를 위임한다 —
  * youtubeDataApi.ts 상단 주석 참고. */
@@ -47,5 +63,5 @@ export type FetchPlaylistDataApiResponse =
   | { ok: true; title: string; videos: PlaylistVideo[] }
   | { ok: false; code: YoutubeApiErrorCode; message: string };
 
-export type BackgroundToContentMessage = ShowFolderPromptMessage;
-export type ContentToBackgroundMessage = FlashBadgeMessage | FetchPlaylistDataApiMessage;
+export type BackgroundToContentMessage = ShowFolderPromptMessage | ShowLicenseLimitMessage;
+export type ContentToBackgroundMessage = FlashBadgeMessage | FetchPlaylistDataApiMessage | OpenManagerMessage;

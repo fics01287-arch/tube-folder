@@ -37,7 +37,27 @@ function sendMessageAsync<T>(message: unknown): Promise<T | undefined> {
 }
 
 chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
-  if (!message || message.type !== 'TF_SHOW_FOLDER_PROMPT') return;
+  if (!message) return;
+
+  // 무료 버전 한도(LicenseLimitError)에 걸려 background.ts가 보낸 안내(2026-09-10, "배지만 뜨고
+  // 안내가 없다" 제보로 신설) — 매니저 탭의 LicenseLimitNotice.tsx 팝업과 같은 문구·버튼 구성을
+  // 유튜브 페이지 위에서도 그대로 재현한다. "PRO 알아보기"는 content script에 chrome.tabs 권한이
+  // 없어 background에 매니저 탭을 열어달라고 요청만 한다(TF_OPEN_MANAGER).
+  if (message.type === 'TF_SHOW_LICENSE_LIMIT') {
+    showMiniPopup({
+      mode: 'confirm',
+      title: '🔒 무료 버전 제한',
+      message: message.message,
+      confirmLabel: 'PRO 알아보기',
+      cancelLabel: '닫기',
+      onSubmit: () => {
+        chrome.runtime.sendMessage({ type: 'TF_OPEN_MANAGER' });
+      }
+    });
+    return;
+  }
+
+  if (message.type !== 'TF_SHOW_FOLDER_PROMPT') return;
 
   if (message.mode === 'new-folder') {
     const parentId = message.parentId;
