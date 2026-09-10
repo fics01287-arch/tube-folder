@@ -10,6 +10,7 @@ import { load, getLastImportFolderId, setLastImportFolderId, getOpenFolderId, re
 import { youtubeUrl } from '../shared/youtubeSelectors';
 import { FREE_VIDEO_LIMIT } from '../license/licenseEngine';
 import { DEFAULT_FOLDER_ICON } from '../shared/folderIcons';
+import { getQueueState, setQueueState, computeNextIndex, isCurrentPageInQueue } from '../shared/playbackQueue';
 import type { TubeStoreData } from '../storage/types';
 import type { BackgroundToContentMessage, FetchPlaylistDataApiResponse } from '../shared/messages';
 
@@ -38,6 +39,87 @@ function showLicenseLimitPopup(message: string): void {
     }
   });
 }
+
+// ── 재생목록(큐) 재생: 영상이 끝나면 다음 영상으로 자동 이동 ─────────────────────────────
+// (2026-09-10, "정렬된 순서대로/무작위로 순차 재생, 1회/무한 재생" 요청) 매니저 탭(App.tsx)이
+// 재생을 시작할 때 첫 영상은 window.open()으로 실제 유튜브 탭을 연다(2026-09-08 "오류 152-4"
+// 주석 — 임베드 재도입 금지). 그 탭 "안"에서 다음 영상으로 자동으로 넘어가려면, 그 탭 자체가
+// 페이지 콘텐츠 스크립트로서 스스로 다음 URL로 하드 네비게이션하는 수밖에 없다(백그라운드가
+// chrome.tabs로 대신 이동시키는 방식도 가능하지만, 지금 탭이 정확히 "그 재생 큐를 보고 있는
+// 탭"인지 background는 알 방법이 없어 content script가 자기 자신의 window.location을 바꾸는
+// 편이 더 안전하고 단순하다). 하드 네비게이션이라 다음 영상 페이지에서는 content script가
+// 완전히 새로 주입되며, 그 새 인스턴스가 다시 저장소의 큐 상태를 읽어 "나도 큐의 현재 항목이
+// 맞다"고 확인한 뒤 video 엘리먼트에 리스너를 붙인다 — 이 사이클이 반복되며 재생목록이 이어진다.
+
+/** 현재 페이지 URL(www.youtube.com/watch?v=... 또는 music.youtube.com/watch?v=...)에서 영상 id를
+ * 뽑아낸다. watch 페이지가 아니거나 v= 파라미터가 없으면 null. */
+export function extractCurrentVideoId(href: string): string | null {
+  try {
+    const u = new URL(href);
+    if (u.pathname !== '/watch') return null;
+    return u.searchParams.get('v');
+  } catch {
+    return null;
+  }
+}
+
+/** video 엘리먼트가 'ended'를 쏘면 호출된다 — 큐를 다시 읽어 다음 항목을 계산하고, 있으면 그
+ * 탭을 그 영상으로 이동시키고, 없으면(1회재생 모드에서 끝까지 다 봤으면) 큐를 지운다. 매번
+ * getQueueState()로 새로 읽는 이유: 영상 재생 중에 매니저 탭에서 사용자가 다른 재생을 새로
+ * 시작했을 수도 있으므로, 페이지 로드 시점에 캐시해둔 state가 아니라 "지금 이 순간" 진짜 최신
+ * 상태를 기준으로 판단해야 한다. */
+export async function handleQueueVideoEnded(): Promise<void> {
+  const state = await getQueueState();
+  const currentVideoId = extractCurrentVideoId(window.location.href);
+  if (!isCurrentPageInQueue(state, currentVideoId)) return; // 안전장치: 이 큐와 무관한 재생이면 아무 것도 안 함
+
+  const nextIndex = computeNextIndex(state!);
+  if (nextIndex === null) {
+    await setQueueState(null);
+    return;
+  }
+  const nextItem = state!.items[nextIndex];
+  await setQueueState({ ...state!, currentIndex: nextIndex });
+  window.location.href = youtubeUrl.watch(nextItem.videoId);
+}
+
+/** 실제 <video> 엘리먼트가 DOM에 나타날 때까지 기다렸다가 'ended' 리스너를 한 번만 붙인다.
+ * 유튜브는 client-side 렌더링이라 document_idle 시점에도 플레이어가 아직 없을 수 있어(특히 첫
+ * 로드) 짧은 간격으로 폴링한다 — MutationObserver로 body 전체를 감시하는 것보다 훨씬 단순하고,
+ * 이 페이지에서 필요한 건 딱 한 번의 <video> 등장 감지뿐이라 과하지 않다. 못 찾으면(예: 유튜브가
+ * 플레이어 마크업을 크게 바꿨거나 플레이어 없는 페이지) 조용히 포기한다 — 매뉴얼 재생은 계속
+ * 정상 동작하고, 자동 다음 곡 넘김만 이번 페이지에서 안 될 뿐이므로 에러를 띄우지 않는다. */
+export function watchForVideoEnded(onEnded: () => void, maxTries = 20, intervalMs = 500): void {
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    const video = document.querySelector('video');
+    if (video) {
+      clearInterval(timer);
+      video.addEventListener('ended', onEnded, { once: true });
+      return;
+    }
+    if (tries >= maxTries) clearInterval(timer);
+  }, intervalMs);
+}
+
+/** 모듈 로드 시 한 번 호출 — 지금 이 페이지가 활성 재생 큐의 "현재 항목"과 일치할 때만 감시를
+ * 시작한다(일치하지 않으면 평범한 단건 재생이거나 큐와 무관한 페이지이므로 아무 것도 하지 않음
+ * — isCurrentPageInQueue의 안전장치와 동일한 기준). */
+async function initPlaybackQueueWatcher(): Promise<void> {
+  const currentVideoId = extractCurrentVideoId(window.location.href);
+  if (!currentVideoId) return;
+  const state = await getQueueState();
+  if (!isCurrentPageInQueue(state, currentVideoId)) return;
+  watchForVideoEnded(() => {
+    handleQueueVideoEnded().catch(() => {
+      // 다음 곡 이동이 실패해도(저장소 접근 실패 등) 지금 보고 있는 영상 재생 자체는 멀쩡하므로
+      // 조용히 무시 — 큐 자동 진행만 여기서 멈추고, 사용자가 수동으로 다음 영상을 고르면 된다.
+    });
+  });
+}
+
+void initPlaybackQueueWatcher();
 
 /** background로 메시지를 보내고 응답(sendResponse)을 Promise로 받는다. 메시지 전송 자체가
  * 실패하거나(chrome.runtime.lastError) 응답이 없으면 undefined를 반환 — 호출부가 이를 "실패"로

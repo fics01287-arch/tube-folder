@@ -54,8 +54,11 @@ import LicenseLimitNotice from './LicenseLimitNotice';
 import AppInfo from './AppInfo';
 import Toast from './Toast';
 import MoveDialog from './MoveDialog';
+import PlaybackOptionsDialog from './PlaybackOptionsDialog';
 import BackupControl from './BackupControl';
 import FolderSidebar from './FolderSidebar';
+import { shuffle, buildQueueItems, setQueueState } from '../shared/playbackQueue';
+import type { QueueOrder, QueueRepeatMode } from '../shared/playbackQueue';
 import {
   pushUndo,
   popUndo,
@@ -601,6 +604,12 @@ export default function App() {
   // "다른 폴더로 이동" 대상 선택 모달 — 단일 이동(📁 버튼)이든 다중 선택 후 일괄 이동이든
   // 옮길 노드 id 배열 하나로 통일해서 처리한다(길이 1이면 기존 단일 이동과 동일하게 동작).
   const [moveDialogIds, setMoveDialogIds] = useState<string[] | null>(null);
+  // 재생(정렬순/무작위·1회/무한 선택) 다이얼로그 — "▶ 폴더 재생"(폴더 안 영상 전체)이나 다중
+  // 선택 툴바의 "▶ 재생"을 누르면 대상 영상 목록을 여기 담아 다이얼로그를 연다(2026-09-10 신설,
+  // "정렬된 순서/무작위 순차재생 + 다중선택 재생 + 1회/무한재생" 요청). playbackQueue.ts가 실제
+  // 재생 큐 상태·다음 곡 계산을 담당하고, 여기서는 "재생 시작" 클릭 시 그 큐를 채우고 첫 영상만
+  // handleVideoClick과 동일하게 window.open()으로 연다.
+  const [playbackDialogNodes, setPlaybackDialogNodes] = useState<VideoNode[] | null>(null);
   // 다중 선택(ROADMAP 4단계 "다중 선택 + 일괄 이동/삭제", 작업순서 2/8, 2026-08-30 산들 착수 승인) —
   // 체크박스 클릭(추가/해제)·Shift+클릭(범위 선택)으로 고른다. 폴더를 옮기면 선택 대상 자체가
   // 의미 없어지므로 currentFolderId가 바뀔 때마다 자동으로 비운다(아래 useEffect).
@@ -789,6 +798,11 @@ export default function App() {
     if (currentFolderId === store.rootId) sorted.push(store.nodes[store.trashId]);
     return sorted;
   }, [store, currentFolderId]);
+
+  // "▶ 폴더 재생" 대상 — 지금 보고 있는 폴더의 직계 영상만, children이 이미 현재 정렬 설정(이름/
+  // 날짜/직접순서 등, 오름·내림차순)대로 정렬돼 있으므로 그 순서를 그대로 재생 순서로 쓴다("정렬된
+  // 순서대로 순차 재생" 요청 그대로).
+  const folderVideoNodes = useMemo(() => children.filter((n): n is VideoNode => isVideo(n)), [children]);
 
   // 드래그 재배치 대상 id 목록 — 휴지통 제외(항상 마지막 고정, 드래그 불가)
   const sortableIds = useMemo(() => children.filter((n) => n.id !== store?.trashId).map((n) => n.id), [children, store]);
@@ -1851,6 +1865,38 @@ export default function App() {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  // 다중 선택 툴바의 "▶ 재생" — 선택된 항목 중 영상만, 선택한 순서가 아니라 지금 폴더에 보이는
+  // 정렬 순서(children) 그대로 골라 다이얼로그에 넘긴다("정렬된 순서대로" 옵션이 실제 화면 순서와
+  // 어긋나지 않게 하기 위함).
+  function openPlaybackDialogForSelection() {
+    const nodes = children.filter((n): n is VideoNode => isVideo(n) && selectedIds.has(n.id));
+    if (nodes.length === 0) return;
+    setPlaybackDialogNodes(nodes);
+  }
+
+  // 재생 옵션 다이얼로그의 "▶ 재생 시작" — 순서(정렬순/무작위)·반복(1회/무한)을 반영해 큐를 만들고,
+  // handleVideoClick과 똑같이 첫 영상만 실제 유튜브 탭으로 연다(임베드 재도입 금지, 위 2026-09-08
+  // "오류 152-4" 주석 참고). 클릭 이벤트 핸들러 안에서 동기적으로 window.open을 호출해야 팝업
+  // 차단을 피할 수 있으므로, 큐 상태 저장(setQueueState, 비동기)은 그 뒤에 fire-and-forget으로
+  // 이어간다 — 실제로 필요한 시점은 첫 영상이 끝나 content.ts가 다음 곡을 찾을 때라 그 전에 여유
+  // 있게 끝난다. 이어보기 위치(t= 파라미터)는 큐 재생에는 적용하지 않는다 — 여러 영상을 순서대로
+  // 넘기는 목적과 "지난번 멈춘 자리부터"는 서로 다른 기능이라 섞으면 혼란스러움.
+  function handlePlaybackStart(order: QueueOrder, repeat: QueueRepeatMode) {
+    if (!playbackDialogNodes) return;
+    const ordered = order === 'shuffle' ? shuffle(playbackDialogNodes) : playbackDialogNodes;
+    const items = buildQueueItems(ordered);
+    if (items.length === 0) {
+      setError('재생할 수 있는 영상이 없습니다 (videoId를 확인할 수 없음).');
+      setPlaybackDialogNodes(null);
+      return;
+    }
+    setError(null);
+    window.open(youtubeUrl.watch(items[0].videoId), '_blank', 'noopener,noreferrer');
+    void setQueueState({ items, currentIndex: 0, repeatMode: repeat, startedAt: Date.now() });
+    setPlaybackDialogNodes(null);
+    setSelectedIds(new Set());
+  }
+
   async function handleClosePlayer() {
     setPlayingVideo(null);
     await refresh(currentFolderId); // 재생 위치(lastPosition) 갱신을 store에 반영
@@ -2727,7 +2773,22 @@ export default function App() {
       {/* 지금 열려 있는 폴더 안에 뭐가 몇 개 있는지(2026-09-08 신설, 산들 요청) — 사이드바·목록/표/
           그리드 행의 마우스오버 툴팁과 같은 숫자를 "폴더를 열어서 들어왔을 때"도 바로 보여준다(위
           folderContentCounts 참고, 직계 자식만 집계). */}
-      {store && currentFolderId && <p className="tf-folder-summary">{folderContentCountsLabel(store, currentFolderId)}</p>}
+      {store && currentFolderId && (
+        <p className="tf-folder-summary">
+          {folderContentCountsLabel(store, currentFolderId)}
+          {/* "정렬되어 있는대로 순차 재생/무작위 재생" 요청(2026-09-10) — 휴지통 안이거나 영상이
+              하나도 없으면 재생할 대상이 없으므로 숨긴다. */}
+          {currentFolderId !== store.trashId && folderVideoNodes.length > 0 && (
+            <button
+              className="tf-btn tf-btn-icon tf-folder-play-btn"
+              onClick={() => setPlaybackDialogNodes(folderVideoNodes)}
+              title="이 폴더의 영상을 지금 정렬 순서대로 재생합니다"
+            >
+              ▶ 폴더 재생
+            </button>
+          )}
+        </p>
+      )}
 
       {/* 검색(작업순서 7/8) — 사이드바는 좁은 화면(휴대폰 PWA)에서 숨겨지므로, 화면 크기와
           무관하게 항상 쓸 수 있도록 사이드바가 아니라 상단 네비게이션 공용 영역(breadcrumb 바로
@@ -3048,6 +3109,13 @@ export default function App() {
                   요청 — 체크 후 이 도구모음에서 고르는 방식으로 확정) 기존에 이미 있던 handleCopy/
                   handleCut을 그대로 재사용 — 우클릭 메뉴·Ctrl+C/X와 동일한 함수라 동작이 하나로
                   유지된다. 휴지통 안에서는 클립보드 대상이 아니라(기존 원칙) 노출하지 않는다. */}
+              {/* "파일을 다중선택해서 재생하는 기능" 요청(2026-09-10) — 선택 중 영상이 하나도
+                  없으면(폴더만 선택) 숨긴다. */}
+              {Array.from(selectedIds).some((id) => store.nodes[id] && isVideo(store.nodes[id])) && (
+                <button className="tf-btn" onClick={openPlaybackDialogForSelection}>
+                  ▶ 재생
+                </button>
+              )}
               <button className="tf-btn" onClick={handleCopy}>
                 복사
               </button>
@@ -3658,6 +3726,14 @@ export default function App() {
           nodes={moveDialogIds.map((id) => store.nodes[id]).filter((n): n is TubeNode => !!n)}
           onPick={handleConfirmMove}
           onCancel={() => setMoveDialogIds(null)}
+        />
+      )}
+
+      {playbackDialogNodes && playbackDialogNodes.length > 0 && (
+        <PlaybackOptionsDialog
+          videoCount={playbackDialogNodes.length}
+          onStart={handlePlaybackStart}
+          onCancel={() => setPlaybackDialogNodes(null)}
         />
       )}
 

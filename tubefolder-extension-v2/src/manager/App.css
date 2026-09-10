@@ -42,9 +42,18 @@ select:focus-visible {
 }
 
 .tf-folder-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0 0 16px;
   font-size: 12px;
   color: #999;
+}
+
+/* "▶ 폴더 재생" 버튼(2026-09-10 신설) — tf-folder-summary 안내문 옆에 작게 붙는다. */
+.tf-folder-play-btn {
+  font-size: 12px;
+  padding: 2px 10px;
 }
 
 .tf-breadcrumb-sep {
@@ -677,6 +686,27 @@ select:focus-visible {
   color: #ccc;
   margin: 12px 0;
   cursor: pointer;
+}
+
+/* 재생 옵션 다이얼로그(PlaybackOptionsDialog, 2026-09-10 신설)의 순서/반복 선택 묶음 — 기존
+   tf-sync-panel 모달 틀 안에 fieldset으로 들어간다. 브라우저 기본 fieldset 테두리 대신 옅은
+   구분선만 남기고, legend는 다른 모달의 소제목과 같은 톤으로 맞춘다. */
+.tf-playback-option-group {
+  border: none;
+  border-top: 1px solid #3f3f3f;
+  padding: 10px 0 0;
+  margin: 12px 0 0;
+}
+
+.tf-playback-option-group legend {
+  padding: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ccc;
+}
+
+.tf-playback-option-group .tf-checkbox-row {
+  margin: 6px 0;
 }
 
 /* 다중 선택 툴바(ROADMAP 4단계 "다중 선택 + 일괄 이동/삭제", 작업순서 2/8) — 선택된 항목이
