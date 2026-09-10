@@ -20,6 +20,7 @@ import { getCachedLicense } from '../license/licenseEngine';
 import { isLicenseAvailable, openPaymentPage } from '../license/licenseManager';
 import { preloadGis } from '../sync/googleIdentityWeb';
 import { useEscapeClose } from './useEscapeClose';
+import PurchaseNoticeModal from './PurchaseNoticeModal';
 
 function formatAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -45,6 +46,8 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
   const [, setTick] = useState(0);
   const [paid, setPaid] = useState(true); // 결제 미설정(개발 단계)에서는 게이트 없이 true로 시작
   const [buyBusy, setBuyBusy] = useState(false);
+  // 구매 전 고지 모달(2026-09-10, "유튜브 페이지 변경 시 서비스 차질 가능성 안내" 요청) — PurchaseNoticeModal 참고.
+  const [noticeOpen, setNoticeOpen] = useState(false);
   const mounted = useRef(true);
 
   // 유료화 정책: 클라우드 동기화는 PRO 전용. isLicenseAvailable()이 false인 동안(Paddle 결제 미설정
@@ -153,6 +156,24 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
     }
   }
 
+  // "PRO 업그레이드" 버튼 클릭(구매 전 고지 모달 확인 이후) 시 실행 — 원래 버튼 onClick에 인라인으로
+  // 있던 로직을 그대로 옮겼다(2026-09-10, PurchaseNoticeModal 도입). Paddle은 이메일 기준으로 결제
+  // 여부를 확인하므로(licenseManager.ts 참고) 결제 페이지를 열기 전에 이메일이 필요한데, 이 패널은
+  // 별도 이메일 입력 필드가 없어 그 자리에서 물어본다.
+  async function handleBuyUpgrade() {
+    const email = window.prompt('결제에 사용할 이메일을 입력해 주세요.');
+    if (!email || !email.trim()) return;
+    setBuyBusy(true);
+    setManualError(null);
+    try {
+      await openPaymentPage(email.trim());
+    } catch (e) {
+      setManualError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBuyBusy(false);
+    }
+  }
+
   // 접근성 보강(ROADMAP 4단계) — 배경 클릭 외에 Esc 키로도 패널/팝업을 닫을 수 있게 한다.
   useEscapeClose(panelOpen, () => setPanelOpen(false));
   useEscapeClose(donePopup, () => {
@@ -229,25 +250,7 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
                 </p>
                 {manualError && <div className="tf-error-banner" role="alert">{manualError}</div>}
                 <div className="tf-sync-actions">
-                  <button
-                    className="tf-btn tf-btn-primary"
-                    disabled={buyBusy}
-                    onClick={async () => {
-                      // Paddle은 이메일 기준으로 결제 여부를 확인하므로(licenseManager.ts 참고), 결제 페이지를
-                      // 열기 전에 이메일이 필요하다 — 이 패널은 별도 이메일 입력 필드가 없어 그 자리에서 물어본다.
-                      const email = window.prompt('결제에 사용할 이메일을 입력해 주세요.');
-                      if (!email || !email.trim()) return;
-                      setBuyBusy(true);
-                      setManualError(null);
-                      try {
-                        await openPaymentPage(email.trim());
-                      } catch (e) {
-                        setManualError(e instanceof Error ? e.message : String(e));
-                      } finally {
-                        setBuyBusy(false);
-                      }
-                    }}
-                  >
+                  <button className="tf-btn tf-btn-primary" disabled={buyBusy} onClick={() => setNoticeOpen(true)}>
                     {buyBusy ? '여는 중...' : '💳 PRO 업그레이드'}
                   </button>
                   <button className="tf-btn" onClick={() => setPanelOpen(false)}>
@@ -356,6 +359,16 @@ export default function SyncControl({ onLocalDataChanged }: Props) {
           </div>
         </div>
       )}
+
+      <PurchaseNoticeModal
+        open={noticeOpen}
+        busy={buyBusy}
+        onCancel={() => setNoticeOpen(false)}
+        onConfirm={async () => {
+          setNoticeOpen(false);
+          await handleBuyUpgrade();
+        }}
+      />
     </div>
   );
 }

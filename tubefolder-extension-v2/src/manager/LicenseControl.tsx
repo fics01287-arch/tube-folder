@@ -26,6 +26,7 @@ import {
   restoreByEmail
 } from '../license/licenseManager';
 import { useEscapeClose } from './useEscapeClose';
+import PurchaseNoticeModal from './PurchaseNoticeModal';
 
 interface Props {
   /** 무료 한도에 걸렸을 때(App.tsx) 이 숫자를 증가시키면 패널이 강제로 열린다 */
@@ -44,6 +45,10 @@ export default function LicenseControl({ openSignal }: Props) {
   const [redeemEmail, setRedeemEmail] = useState('');
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [redeemError, setRedeemError] = useState<string | null>(null);
+  // 구매 전 고지 모달(2026-09-10, "유튜브 페이지 변경 시 서비스 차질 가능성 안내" 요청) — 실제
+  // 결제 페이지를 여는 handleBuy는 그대로 두고, "구매하기" 클릭 시 이 모달을 먼저 열어 확인을
+  // 받은 뒤에만 handleBuy를 호출하도록 한 단계 앞에 끼워 넣는다.
+  const [noticeOpen, setNoticeOpen] = useState(false);
   const pendingPurchase = useRef(false);
   const pendingEmail = useRef('');
   const mounted = useRef(true);
@@ -296,7 +301,11 @@ export default function LicenseControl({ openSignal }: Props) {
                 {error && <div className="tf-error-banner" role="alert">{error}</div>}
 
                 <div className="tf-sync-actions">
-                  <button className="tf-btn tf-btn-primary" onClick={handleBuy} disabled={busy || !email.trim()}>
+                  <button
+                    className="tf-btn tf-btn-primary"
+                    onClick={() => setNoticeOpen(true)}
+                    disabled={busy || !email.trim()}
+                  >
                     {busy ? '여는 중...' : '💳 구매하기'}
                   </button>
                   <button className="tf-btn" onClick={handleRestore} disabled={busy || !email.trim()}>
@@ -369,6 +378,16 @@ export default function LicenseControl({ openSignal }: Props) {
           </div>
         </div>
       )}
+
+      <PurchaseNoticeModal
+        open={noticeOpen}
+        busy={busy}
+        onCancel={() => setNoticeOpen(false)}
+        onConfirm={async () => {
+          setNoticeOpen(false);
+          await handleBuy();
+        }}
+      />
 
       {donePopup && (
         <div className="tf-sync-overlay tf-sync-overlay-top">

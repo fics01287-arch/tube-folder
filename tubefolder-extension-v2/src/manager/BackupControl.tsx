@@ -19,6 +19,7 @@ import type { TubeStoreData } from '../storage/types';
 import { LicenseLimitError } from '../license/licenseEngine';
 import { openPaymentPage } from '../license/licenseManager';
 import { useEscapeClose } from './useEscapeClose';
+import PurchaseNoticeModal from './PurchaseNoticeModal';
 
 interface Props {
   /** 병합/덮어쓰기로 로컬 데이터가 바뀌었을 때 목록을 새로고침하도록 부모에 알림(SyncControl과 동일 계약) */
@@ -40,6 +41,8 @@ export default function BackupControl({ onLocalDataChanged, onUndoableAction }: 
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [licenseError, setLicenseError] = useState<string | null>(null);
   const [buyBusy, setBuyBusy] = useState(false);
+  // 구매 전 고지 모달(2026-09-10, "유튜브 페이지 변경 시 서비스 차질 가능성 안내" 요청) — PurchaseNoticeModal 참고.
+  const [noticeOpen, setNoticeOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEscapeClose(open, () => setOpen(false));
@@ -204,7 +207,7 @@ export default function BackupControl({ onLocalDataChanged, onUndoableAction }: 
               <>
                 <div className="tf-error-banner" role="alert">{licenseError}</div>
                 <div className="tf-sync-actions">
-                  <button className="tf-btn tf-btn-primary" disabled={buyBusy} onClick={handleBuyUpgrade}>
+                  <button className="tf-btn tf-btn-primary" disabled={buyBusy} onClick={() => setNoticeOpen(true)}>
                     {buyBusy ? '여는 중...' : '💳 PRO 업그레이드'}
                   </button>
                 </div>
@@ -270,6 +273,16 @@ export default function BackupControl({ onLocalDataChanged, onUndoableAction }: 
           </div>
         </div>
       )}
+
+      <PurchaseNoticeModal
+        open={noticeOpen}
+        busy={buyBusy}
+        onCancel={() => setNoticeOpen(false)}
+        onConfirm={async () => {
+          setNoticeOpen(false);
+          await handleBuyUpgrade();
+        }}
+      />
     </div>
   );
 }
