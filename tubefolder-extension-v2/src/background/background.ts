@@ -251,7 +251,7 @@ chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _send
   // script는 chrome.tabs 권한이 없어 매니저 탭을 직접 열 수 없으므로 이미 있는 openManager()에
   // 위임한다(2026-09-10, "배지만 뜨고 안내가 없다" 제보로 신설).
   if (message && message.type === 'TF_OPEN_MANAGER') {
-    openManager();
+    openManagerAndShowLicense();
     return undefined;
   }
 
@@ -407,6 +407,28 @@ async function openManager(): Promise<number | undefined> {
   } catch {
     const created = await chrome.tabs.create({ url });
     return created.id;
+  }
+}
+
+/** "🔒 무료 버전 제한" 미니 팝업의 "PRO 알아보기" 전용(2026-09-10, "매니저로 화면만 옮겨가고
+ * PRO 화면이 안 뜬다" 제보로 신설) — 매니저 탭을 그냥 여는 openManager()와 달리, App.tsx가 열자마자
+ * 라이선스 패널을 강제로 띄우도록 URL에 ?openLicense=1을 붙인다. 이미 매니저 탭이 열려 있는
+ * 경우에도 그 탭을 이 URL로 다시 이동시켜(reload) 같은 방식으로 App.tsx의 마운트 시점 처리를
+ * 그대로 태운다 — 이미 열린 탭에 메시지로 알리는 방식(타이밍 경쟁 처리 필요)보다 훨씬 단순하고,
+ * 이 흐름은 자주 있는 일이 아니라 탭이 한 번 새로고침되는 비용이 크지 않다고 판단했다. */
+async function openManagerAndShowLicense(): Promise<void> {
+  const base = chrome.runtime.getURL(MANAGER);
+  const withParam = base + '?openLicense=1';
+  try {
+    const tabs = await chrome.tabs.query({});
+    const existing = tabs.find((t) => t.url && t.url.indexOf(base) === 0);
+    if (existing && existing.id != null) {
+      chrome.tabs.update(existing.id, { active: true, url: withParam });
+      return;
+    }
+    await chrome.tabs.create({ url: withParam });
+  } catch {
+    await chrome.tabs.create({ url: withParam });
   }
 }
 

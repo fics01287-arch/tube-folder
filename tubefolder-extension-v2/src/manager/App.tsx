@@ -641,6 +641,28 @@ export default function App() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // 유튜브 페이지의 "🔒 무료 버전 제한" 미니 팝업에서 "PRO 알아보기"를 눌렀을 때(background.ts의
+  // openManagerAndShowLicense()) 매니저 탭이 ?openLicense=1을 달고 열리거나(재)이동해온다 — 마운트
+  // 시점에 그 표시를 읽어 라이선스 패널을 강제로 띄운다(2026-09-10, "매니저로 화면만 옮겨가고 PRO
+  // 화면이 안 뜬다" 제보로 신설). 새로고침해도 계속 뜨지 않도록 처리 후 쿼리스트링은 지운다.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('openLicense') === '1') {
+        setLicenseOpenSignal((n) => n + 1);
+        params.delete('openLicense');
+        const rest = params.toString();
+        const newUrl = window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash;
+        window.history.replaceState(null, '', newUrl);
+      }
+    } catch {
+      // URL/History API 접근 실패는 무시 — 패널이 자동으로 안 열려도 치명적이지 않고, 사용자가
+      // 직접 PRO 배지를 눌러도 같은 화면으로 갈 수 있다.
+    }
+    // 마운트 시 한 번만 확인하면 되는 URL 파라미터라 의존성 배열을 비워둔다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 폴더를 옮겨다니면 이전 폴더에서 고른 선택 항목은 화면에서 사라지므로 의미가 없다 — 탐색기도
   // 폴더를 바꾸면 선택이 풀리는 것과 동일한 관례.
   useEffect(() => {
