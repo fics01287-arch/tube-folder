@@ -179,10 +179,10 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
         );
 
         // (2026-09-09, "가져오기를 실행취소/다시 실행 가능하게 해달라" 요청과 짝을 이루는 로직 —
-        // 이번 "새 폴더/현재 폴더/다른 폴더 선택" 요청으로 새로 생긴 "현재 폴더" 개념도 우선순위
-        // 1순위가 "직전에 가져왔던 폴더"이므로, 실제로 어느 목적지를 골랐든 완료 시점에 항상
-        // 갱신해둔다 — 전부 중복이라 added===0이어도 "이 폴더로 가져오기를 시도했다"는 사실 자체는
-        // 유효하므로 기록한다.
+        // 이번 "새 폴더/현재 폴더/다른 폴더 선택" 요청으로 새로 생긴 "현재 폴더" 개념의 후보 중
+        // 하나(매니저가 안 열려있을 때의 대체값)이므로, 실제로 어느 목적지를 골랐든 완료 시점에
+        // 항상 갱신해둔다 — 전부 중복이라 added===0이어도 "이 폴더로 가져오기를 시도했다"는
+        // 사실 자체는 유효하므로 기록한다.
         await setLastImportFolderId(folderId);
 
         // 무료 티어 영상 개수 한도(FREE_VIDEO_LIMIT)에 걸린 경우는 "이름이 같아 건너뜀"과 전혀
@@ -310,10 +310,12 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
 
       // (2026-09-09, "'이 재생목록 가져오기'도 새 폴더/현재 폴더/다른 폴더 중 선택하게 해달라"
       // 요청) "현재 폴더"는 매니저 탭의 currentFolderId와 달리 유튜브 페이지엔 원래 없는
-      // 개념이라, 산들과 상의해 우선순위를 정했다: ①직전에 재생목록을 가져왔던 폴더 → ②매니저
-      // 탭에 지금 열려있는 폴더 → ③(둘 다 없으면) 최상위 폴더. resolveCurrentFolderId가 유효성
-      // 검증(삭제됨·휴지통 이동됨 여부)까지 포함해 계산한다. "새 폴더 만들기"도 이 폴더 안에
-      // 만든다(매니저 탭의 "새 폴더 만들기"가 currentFolderId 안에 만드는 것과 같은 원칙).
+      // 개념이라, 우선순위를 정했다: ①매니저 탭에 지금(마지막으로) 열려있는 폴더 → ②직전에
+      // 재생목록을 가져왔던 폴더 → ③(둘 다 없으면) 최상위 폴더(2026-09-10, "바로 직전에 보고
+      // 있던 폴더로 나오게 해달라" 피드백으로 ①②순서를 뒤집음 — resolveCurrentFolderId 참고).
+      // resolveCurrentFolderId가 유효성 검증(삭제됨·휴지통 이동됨 여부)까지 포함해 계산한다.
+      // "새 폴더 만들기"도 이 폴더 안에 만든다(매니저 탭의 "새 폴더 만들기"가 currentFolderId
+      // 안에 만드는 것과 같은 원칙).
       const data = await load();
       const currentFolderId = resolveCurrentFolderId(data, await getLastImportFolderId(), await getOpenFolderId());
       const currentFolderName = data.nodes[currentFolderId]?.name ?? '튜브폴더';

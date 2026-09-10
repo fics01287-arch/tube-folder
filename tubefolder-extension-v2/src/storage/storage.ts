@@ -62,11 +62,15 @@ export async function getDeviceId(): Promise<string> {
 
 // (2026-09-09, "'이 재생목록 가져오기' 할 때도 새 폴더/현재 폴더/다른 폴더를 선택하게 해달라"
 // 요청 — 유튜브 페이지 우클릭 메뉴에는 매니저 탭의 currentFolderId 같은 "지금 보고 있는 폴더"
-// 개념이 원래 없어서, "현재 폴더"를 무엇으로 볼지 정의가 필요했다. 산들과 상의해 정한 우선순위:
-// ①직전에 재생목록을 가져왔던 폴더 → ②매니저 탭에 지금 열려있는 폴더 → ③(둘 다 없으면) 최상위
-// 폴더. 두 값 모두 tubefolder_v1(TubeStoreData) 본체가 아니라 별도 키로 chrome.storage.local에
-// device-id와 같은 패턴으로 저장한다 — 이 값들은 동기화 대상도 아니고 기기마다 달라도 무방한
-// "이 브라우저에서 마지막으로 뭘 하고 있었는지" 성격의 로컬 전용 상태이기 때문.
+// 개념이 원래 없어서, "현재 폴더"를 무엇으로 볼지 정의가 필요했다. 처음엔 ①직전에 재생목록을
+// 가져왔던 폴더 → ②매니저 탭에 지금 열려있는 폴더 순으로 정했으나, 실제로 써보니 매니저에서
+// 다른 폴더(예: 방금 만든 새 폴더)를 보고 있는 중에 가져오기를 실행했는데 그보다 이전에 가져온
+// 적 있는 폴더가 "현재 폴더"로 뜨는 게 더 헷갈린다는 2026-09-10 피드백으로 순서를 뒤집었다:
+// ①매니저 탭에 지금(마지막으로) 열려있는 폴더 → ②직전에 재생목록을 가져왔던 폴더(매니저를
+// 아예 연 적 없어 ①이 없을 때의 대체) → ③(둘 다 없으면) 최상위 폴더. 두 값 모두 tubefolder_v1
+// (TubeStoreData) 본체가 아니라 별도 키로 chrome.storage.local에 device-id와 같은 패턴으로
+// 저장한다 — 이 값들은 동기화 대상도 아니고 기기마다 달라도 무방한 "이 브라우저에서 마지막으로
+// 뭘 하고 있었는지" 성격의 로컬 전용 상태이기 때문.
 const LAST_IMPORT_FOLDER_KEY = 'tubefolder_last_import_folder_id';
 const OPEN_FOLDER_KEY = 'tubefolder_open_folder_id';
 
@@ -128,6 +132,9 @@ export async function setOpenFolderId(id: string | null): Promise<void> {
  * "이 재생목록 가져오기"(content.ts, 유튜브 페이지 우클릭)에서 쓸 "현재 폴더"를 우선순위대로
  * 계산한다. 후보가 가리키는 폴더가 이미 삭제됐거나 휴지통으로 이동했으면 건너뛰고 다음
  * 우선순위로 넘어가며, 최종적으로 항상 유효한 폴더 id(최악의 경우 rootId)를 반환한다.
+ * 우선순위: ①매니저 탭에 지금 열려있는(마지막으로 보고 있던) 폴더 → ②직전에 재생목록을
+ * 가져왔던 폴더 → ③최상위 폴더(2026-09-10, "바로 직전에 보고 있던 폴더로 나오게 해달라"
+ * 피드백으로 ①②순서를 뒤집음 — 예전엔 ①②가 반대였음).
  */
 export function resolveCurrentFolderId(data: TubeStoreData, lastImportFolderId: string | null, openFolderId: string | null): string {
   const isValidTarget = (id: string | null): id is string => {
@@ -135,8 +142,8 @@ export function resolveCurrentFolderId(data: TubeStoreData, lastImportFolderId: 
     const n = data.nodes[id];
     return !!n && n.type === 'folder' && id !== data.trashId;
   };
-  if (isValidTarget(lastImportFolderId)) return lastImportFolderId;
   if (isValidTarget(openFolderId)) return openFolderId;
+  if (isValidTarget(lastImportFolderId)) return lastImportFolderId;
   return data.rootId;
 }
 
