@@ -55,8 +55,11 @@ async function rebuildFolderMenus(): Promise<void> {
         store = await load(); // load()는 실패해도 emptyStore 기반 migrate 결과를 반환하므로 재호출로 충분
       }
 
-      // ① 동영상 추가
-      createMenu({ id: 'tf-root', title: '📁 튜브폴더에 추가' });
+      // ① 동영상 추가 (2026-09-10, "재생목록 전체가 아니라 영상 1개만 추가돼서 헷갈린다" 피드백으로
+      // 이름 변경 — 이 메뉴는 원래부터 설계상 "우클릭한 영상 1개만" 폴더에 넣는 기능이고(재생목록
+      // 전체를 가져오는 건 별도의 "이 재생목록 가져오기" 메뉴), 동작 자체는 정상이지만 "튜브폴더에
+      // 추가"라는 문구만으로는 재생목록 전체가 들어가는 것으로 오해하기 쉬워 문구를 명확히 했다.)
+      createMenu({ id: 'tf-root', title: '📁 이 동영상만 폴더에 추가' });
       buildAddVideoSubMenus(store, store.rootId, 'tf-root', 0);
 
       // ② 재생목록 가져오기 — 비공개 재생목록도 지원(로그인 쿠키를 실어 보내는 인증된 fetch,
