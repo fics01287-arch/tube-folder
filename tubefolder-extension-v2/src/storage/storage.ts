@@ -128,6 +128,44 @@ export async function setOpenFolderId(id: string | null): Promise<void> {
   }
 }
 
+/** JSON 백업을 마지막으로 저장한 위치(2026-09-10, "백업 버튼 옆에 저장경로 열기 버튼" 요청) —
+ *  chrome.downloads.download()가 돌려준 downloadId를 남겨둬서, 매니저 탭을 새로 열거나 새로고침한
+ *  뒤에도 툴바의 "저장경로 열기" 버튼이 마지막 백업 파일이 있는 폴더를 곧장 열 수 있게 한다.
+ *  PWA(비확장) 컨텍스트에는 chrome.downloads 자체가 없어 이 값이 애초에 기록되지 않는다. */
+export interface LastBackupSave {
+  downloadId: number;
+  /** chrome.downloads.search()가 돌려준 절대 경로. 알 수 없으면 null(그래도 downloadId로 열기는 가능). */
+  path: string | null;
+  savedAt: number;
+}
+
+const LAST_BACKUP_KEY = 'tubefolder_last_backup_save';
+
+export async function getLastBackupSave(): Promise<LastBackupSave | null> {
+  if (hasChromeStorage()) {
+    const o = await chrome.storage.local.get(LAST_BACKUP_KEY);
+    return (o[LAST_BACKUP_KEY] as LastBackupSave | undefined) ?? null;
+  }
+  try {
+    const raw = localStorage.getItem(LAST_BACKUP_KEY);
+    return raw ? (JSON.parse(raw) as LastBackupSave) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setLastBackupSave(info: LastBackupSave): Promise<void> {
+  if (hasChromeStorage()) {
+    await chrome.storage.local.set({ [LAST_BACKUP_KEY]: info });
+    return;
+  }
+  try {
+    localStorage.setItem(LAST_BACKUP_KEY, JSON.stringify(info));
+  } catch {
+    // 무시(위와 동일한 이유)
+  }
+}
+
 /**
  * "이 재생목록 가져오기"(content.ts, 유튜브 페이지 우클릭)에서 쓸 "현재 폴더"를 우선순위대로
  * 계산한다. 후보가 가리키는 폴더가 이미 삭제됐거나 휴지통으로 이동했으면 건너뛰고 다음
