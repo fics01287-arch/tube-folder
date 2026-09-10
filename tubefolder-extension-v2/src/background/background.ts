@@ -369,13 +369,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       });
       flashBadge('+1', '#22a722');
     } catch (e) {
-      console.error('[튜브폴더] 추가 실패:', e);
       // 무료 버전 영상 개수 한도에 걸린 경우는 배지만 깜빡이고 끝내면 왜 안 됐는지 전혀 알 수
       // 없다(2026-09-10, "배지만 뜨고 안내가 없다" 제보) — 매니저 탭의 LicenseLimitNotice.tsx와
-      // 같은 취지로, 유튜브 페이지 위에 이유를 알려주는 미니 팝업을 띄운다.
+      // 같은 취지로, 유튜브 페이지 위에 이유를 알려주는 미니 팝업을 띄운다. 이건 프로그램 결함이
+      // 아니라 정책상 정상적으로 막힌 상황이라 console.error로 남기지 않는다 — console.error는
+      // chrome://extensions의 "오류" 목록에 진짜 버그처럼 잡혀서(2026-09-10, "확장프로그램에
+      // 새로고침했더니 오류가 뜬다" 제보로 발견 — 실제로는 정상 동작이었음) 나중에 진짜 버그와
+      // 헷갈리게 만든다. console.warn은 그 목록에 안 잡히므로 콘솔에서 원인 추적은 여전히 가능하다.
       if (e instanceof LicenseLimitError) {
+        console.warn('[튜브폴더] 추가 건너뜀(무료 버전 한도):', e.message);
         sendPromptToTab(tab, { type: 'TF_SHOW_LICENSE_LIMIT', message: e.message });
       } else {
+        console.error('[튜브폴더] 추가 실패:', e);
         flashBadge('!', '#cc0000');
       }
     }
