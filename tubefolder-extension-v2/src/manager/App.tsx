@@ -1100,7 +1100,14 @@ export default function App() {
         setToast({ label, kind: 'undo', ts: Date.now() });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // 복사(duplicateNode)도 새 폴더/영상을 만드는 동작이라 무료 한도(LicenseLimitError)에 걸릴 수
+      // 있다(2026-09-10, "복사·붙여넣기 했을 때도 예전 안내 메시지가 뜬다" 제보로 추가 — 다른 5개
+      // 지점과 같은 패턴).
+      if (e instanceof LicenseLimitError) {
+        setLicenseLimitMessage(e.message);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     }
   }
 
