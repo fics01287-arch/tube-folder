@@ -17,6 +17,28 @@ function flashBadge(text: string, color: string): void {
   chrome.runtime.sendMessage({ type: 'TF_FLASH_BADGE', text, color });
 }
 
+/** 무료 버전 한도(LicenseLimitError 또는 그와 동등한 한도 초과 상황)에 걸렸을 때 보여주는 공용
+ * 안내 팝업 — 매니저 탭의 LicenseLimitNotice.tsx와 같은 문구·버튼 구성을 유튜브 페이지 위에서도
+ * 그대로 재현한다. "PRO 알아보기"는 content script에 chrome.tabs 권한이 없어 background에
+ * 매니저 탭을 열어달라고 요청만 한다(TF_OPEN_MANAGER). background가 보낸 TF_SHOW_LICENSE_LIMIT
+ * 메시지(우클릭 메뉴로 단일 영상 추가) 외에, content.ts 자체 안에서 한도를 감지하는 흐름(재생목록
+ * 가져오기의 finishImport)도 이 함수를 그대로 재사용한다(2026-09-10, "재생목록 가져오기에서는
+ * 이 안내가 안 뜬다" 제보로 발견 — 그전까지 이 흐름은 안내 없이 평범한 에러 텍스트만 보여주고
+ * 있었음). 기존에 열려 있던 팝업(예: "가져오기 확인" 확인창)을 이 팝업으로 교체한다 — miniPopup의
+ * activeHost 추적 덕분에 onSubmit 중간에 새 팝업을 띄워도 경쟁 상태 없이 안전하게 이어진다. */
+function showLicenseLimitPopup(message: string): void {
+  showMiniPopup({
+    mode: 'confirm',
+    title: '🔒 무료 버전 제한',
+    message,
+    confirmLabel: 'PRO 알아보기',
+    cancelLabel: '닫기',
+    onSubmit: () => {
+      chrome.runtime.sendMessage({ type: 'TF_OPEN_MANAGER' });
+    }
+  });
+}
+
 /** background로 메시지를 보내고 응답(sendResponse)을 Promise로 받는다. 메시지 전송 자체가
  * 실패하거나(chrome.runtime.lastError) 응답이 없으면 undefined를 반환 — 호출부가 이를 "실패"로
  * 취급해 기존 방식으로 대체(fallback)할 수 있게 한다. */
@@ -44,16 +66,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
   // 유튜브 페이지 위에서도 그대로 재현한다. "PRO 알아보기"는 content script에 chrome.tabs 권한이
   // 없어 background에 매니저 탭을 열어달라고 요청만 한다(TF_OPEN_MANAGER).
   if (message.type === 'TF_SHOW_LICENSE_LIMIT') {
-    showMiniPopup({
-      mode: 'confirm',
-      title: '🔒 무료 버전 제한',
-      message: message.message,
-      confirmLabel: 'PRO 알아보기',
-      cancelLabel: '닫기',
-      onSubmit: () => {
-        chrome.runtime.sendMessage({ type: 'TF_OPEN_MANAGER' });
-      }
-    });
+    showLicenseLimitPopup(message.message);
     return;
   }
 
@@ -207,12 +220,18 @@ chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
 
         // 무료 티어 영상 개수 한도(FREE_VIDEO_LIMIT)에 걸린 경우는 "이름이 같아 건너뜀"과 전혀
         // 다른 상황이라(한도 초과분은 몇 번을 다시 시도해도 절대 추가되지 않음) 결과 팝업 대신
-        // 별도 에러로 명확히 알린다(기존 동작 유지).
+        // 별도로 명확히 알린다(기존 동작 유지). 2026-09-10 전까지는 여기서 그냥 Error를 throw해서
+        // "가져오기 확인" 창에 인라인 에러 텍스트로만 보여줬는데(취소/가져오기 버튼이 그대로 남아
+        // 다시 시도할 수 있는 것처럼 보임), "업그레이드"라는 말만 있고 실제로 업그레이드로 이어지는
+        // 버튼이 없어 다른 5곳(App.tsx)·컨텍스트 메뉴 단일 추가(TF_SHOW_LICENSE_LIMIT)와 달리 이
+        // 흐름만 안내가 빠져 있던 것을 산들이 실제 화면으로 발견해 제보함 — showLicenseLimitPopup로
+        // 교체해 "PRO 알아보기" 버튼이 있는 동일한 안내 팝업이 뜨도록 통일한다.
         if (result.limitReached) {
           flashBadge('🔒', '#cc8800');
-          throw new Error(
+          showLicenseLimitPopup(
             `무료 버전 영상 개수 한도(${FREE_VIDEO_LIMIT}개)에 도달해 ${result.added}개만 추가하고 나머지 ${result.skipped}개는 건너뛰었습니다. 기존 영상을 정리하거나 업그레이드 후 다시 시도해 주세요.`
           );
+          return;
         }
 
         flashBadge(result.added > 0 ? `+${result.added}` : '0', result.added > 0 ? '#22a722' : '#888888');
