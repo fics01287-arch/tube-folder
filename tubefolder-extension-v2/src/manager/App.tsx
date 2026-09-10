@@ -50,6 +50,7 @@ import type { Settings, TubeNode, TubeStoreData, VideoNode } from '../storage/ty
 import PlayerOverlay from './PlayerOverlay';
 import SyncControl from './SyncControl';
 import LicenseControl from './LicenseControl';
+import LicenseLimitNotice from './LicenseLimitNotice';
 import AppInfo from './AppInfo';
 import Toast from './Toast';
 import MoveDialog from './MoveDialog';
@@ -570,6 +571,9 @@ export default function App() {
   const [playingVideo, setPlayingVideo] = useState<VideoNode | null>(null);
   const [emptyingTrash, setEmptyingTrash] = useState(false);
   const [licenseOpenSignal, setLicenseOpenSignal] = useState(0);
+  // 무료 버전 한도(폴더/영상 개수)에 걸렸을 때 보여줄 안내 팝업 메시지(2026-09-10, "유료 버전
+  // 전용 기능이 제한될 때 안내 팝업" 요청) — LicenseLimitNotice.tsx 참고. null이면 안 뜬 상태.
+  const [licenseLimitMessage, setLicenseLimitMessage] = useState<string | null>(null);
   // 휴지통 보관기간 변경 확인 흐름 — null이면 확인 대기 중이 아님(선택만 바꾼 상태)
   const [pendingRetentionDays, setPendingRetentionDays] = useState<number | null | undefined>(undefined);
   const [pendingRetentionPreview, setPendingRetentionPreview] = useState(0);
@@ -1246,8 +1250,11 @@ export default function App() {
       setEditingId(folder.id);
       setEditingValue(folder.name);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
+      if (e instanceof LicenseLimitError) {
+        setLicenseLimitMessage(e.message);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     }
   }
 
@@ -1266,8 +1273,11 @@ export default function App() {
       await refresh(currentFolderId);
       scheduleAutoSync();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
+      if (e instanceof LicenseLimitError) {
+        setLicenseLimitMessage(e.message);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     }
   }
 
@@ -1871,8 +1881,11 @@ export default function App() {
       setImportFlow({ stage: 'choose-destination', videos, apiFailReason });
     } catch (e) {
       setImportStatus(null);
-      setError(e instanceof Error ? e.message : String(e));
-      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
+      if (e instanceof LicenseLimitError) {
+        setLicenseLimitMessage(e.message);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setImporting(false);
     }
@@ -1949,7 +1962,9 @@ export default function App() {
         setImportStatus(
           `무료 버전 한도라 ${result.added}개만 추가되고 나머지는 건너뛰었습니다. 전체를 가져오려면 업그레이드가 필요합니다.${fallbackNote}`
         );
-        setLicenseOpenSignal((n) => n + 1);
+        setLicenseLimitMessage(
+          `무료 버전 한도라 ${result.added}개만 추가되고 나머지는 건너뛰었습니다. 전체를 가져오려면 업그레이드가 필요합니다.`
+        );
         return;
       }
 
@@ -1965,8 +1980,11 @@ export default function App() {
       setImportResult({ total: videos.length, duplicateNames, added: result.added, finalCount, apiFailReason });
     } catch (e) {
       setImportStatus(null);
-      setError(e instanceof Error ? e.message : String(e));
-      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
+      if (e instanceof LicenseLimitError) {
+        setLicenseLimitMessage(e.message);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setImporting(false);
     }
@@ -1986,8 +2004,11 @@ export default function App() {
       const folder = await createFolder(currentFolderId, trimmed);
       await runImport(folder.id, importFlow.videos, false, importFlow.apiFailReason);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      if (e instanceof LicenseLimitError) setLicenseOpenSignal((n) => n + 1);
+      if (e instanceof LicenseLimitError) {
+        setLicenseLimitMessage(e.message);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     }
   }
 
@@ -2630,6 +2651,11 @@ export default function App() {
         <div className="tf-header-row">
           <h1>튜브폴더</h1>
           <LicenseControl openSignal={licenseOpenSignal} />
+          <LicenseLimitNotice
+            message={licenseLimitMessage}
+            onUpgrade={() => setLicenseOpenSignal((n) => n + 1)}
+            onClose={() => setLicenseLimitMessage(null)}
+          />
           <SyncControl onLocalDataChanged={refreshKeepingFolder} />
           <BackupControl
             onLocalDataChanged={refreshKeepingFolder}
