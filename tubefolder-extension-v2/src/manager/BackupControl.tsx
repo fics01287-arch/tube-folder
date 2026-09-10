@@ -102,7 +102,10 @@ export default function BackupControl({ onLocalDataChanged, onUndoableAction }: 
   const [lastBackupSave, setLastBackupSaveState] = useState<LastBackupSave | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEscapeClose(open, () => setOpen(false));
+  // Esc로 닫을 때도 다른 닫기 경로(오버레이 클릭, "닫기" 버튼)와 똑같이 상태를 초기화한다 —
+  // 안 그러면 병합/다운로드 결과 화면을 Esc로 닫고 툴바에서 다시 열었을 때, 이미 끝난 결과 화면이
+  // 그대로 남아 재사용 버튼(다운로드/업로드)이 안 보이는 채로 다시 뜨는 문제가 있었다.
+  useEscapeClose(open, closePanel);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,6 +297,11 @@ export default function BackupControl({ onLocalDataChanged, onUndoableAction }: 
   }
 
   const preview = step.kind === 'preview' || step.kind === 'overwriteConfirm' ? previewBackupCounts(step.file) : null;
+  // 방금 다운로드/병합/덮어쓰기가 성공해서 결과 화면(✅ 메시지 또는 저장 위치 박스)이 떠 있는 상태 —
+  // 이때는 "다운로드/업로드"를 다시 고를 필요가 없으므로 "닫기"만 남긴다(2026-09-10, "병합 결과 화면에
+  // 다운로드·업로드 버튼이 불필요" 요청). 에러나 라이선스 한도 안내가 함께 떠 있을 때는 재시도할 수
+  // 있어야 하므로 원래대로 전체 액션을 보여준다.
+  const showDoneOnly = step.kind === 'idle' && !error && !licenseError && (!!resultMessage || !!exportInfo);
 
   return (
     <div className="tf-sync">
@@ -376,7 +384,15 @@ export default function BackupControl({ onLocalDataChanged, onUndoableAction }: 
               </div>
             )}
 
-            {step.kind === 'idle' && (
+            {step.kind === 'idle' && showDoneOnly && (
+              <div className="tf-sync-actions">
+                <button className="tf-btn tf-btn-primary" onClick={closePanel}>
+                  닫기
+                </button>
+              </div>
+            )}
+
+            {step.kind === 'idle' && !showDoneOnly && (
               <div className="tf-sync-actions">
                 <button className="tf-btn tf-btn-primary" disabled={busy} onClick={handleExport}>
                   {busy ? '다운로드하는 중...' : '⬇️ 다운로드'}
