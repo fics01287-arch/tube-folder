@@ -1876,12 +1876,18 @@ export default function App() {
 
   // 재생 옵션 다이얼로그의 "▶ 재생 시작" — 순서(정렬순/무작위)·반복(1회/무한)을 반영해 큐를 만들고,
   // handleVideoClick과 똑같이 첫 영상만 실제 유튜브 탭으로 연다(임베드 재도입 금지, 위 2026-09-08
-  // "오류 152-4" 주석 참고). 클릭 이벤트 핸들러 안에서 동기적으로 window.open을 호출해야 팝업
-  // 차단을 피할 수 있으므로, 큐 상태 저장(setQueueState, 비동기)은 그 뒤에 fire-and-forget으로
-  // 이어간다 — 실제로 필요한 시점은 첫 영상이 끝나 content.ts가 다음 곡을 찾을 때라 그 전에 여유
-  // 있게 끝난다. 이어보기 위치(t= 파라미터)는 큐 재생에는 적용하지 않는다 — 여러 영상을 순서대로
-  // 넘기는 목적과 "지난번 멈춘 자리부터"는 서로 다른 기능이라 섞으면 혼란스러움.
-  function handlePlaybackStart(order: QueueOrder, repeat: QueueRepeatMode) {
+  // "오류 152-4" 주석 참고). **큐 상태 저장(setQueueState)을 window.open보다 먼저 await로 끝내둔다**
+  // — 새로 열리는 탭의 content.ts가 페이지 로드 즉시(모듈 로드 시점) getQueueState()로 큐를 읽어
+  // 이전/다음 위젯을 그리는데(2026-09-10, "재생 중 다음/이전으로 건너뛰기" 요청으로 위젯 추가),
+  // 만약 window.open을 먼저 하고 저장을 fire-and-forget으로 미루면 새 탭이 먼저 뜬 뒤에야 저장이
+  // 끝나는 순서가 될 수 있어 첫 영상에서만 위젯이 안 뜨는 경합이 생길 수 있음(재생 자체가 끝나야
+  // 필요했던 예전 자동 다음곡 넘김과 달리, 위젯은 페이지 로드 "즉시" 필요해서 경합에 더 민감함).
+  // chrome.storage.local.set은 네트워크 없이 로컬에서 끝나는 아주 빠른 호출이라, 클릭 이벤트
+  // 핸들러 안에서 짧게 await해도 브라우저의 팝업 차단 판단 기준(사용자 제스처 후 일정 시간 동안
+  // 유효한 "일시적 활성화")을 벗어나지 않는다. 이어보기 위치(t= 파라미터)는 큐 재생에는 적용하지
+  // 않는다 — 여러 영상을 순서대로 넘기는 목적과 "지난번 멈춘 자리부터"는 서로 다른 기능이라 섞으면
+  // 혼란스러움.
+  async function handlePlaybackStart(order: QueueOrder, repeat: QueueRepeatMode) {
     if (!playbackDialogNodes) return;
     const ordered = order === 'shuffle' ? shuffle(playbackDialogNodes) : playbackDialogNodes;
     const items = buildQueueItems(ordered);
@@ -1891,8 +1897,8 @@ export default function App() {
       return;
     }
     setError(null);
+    await setQueueState({ items, currentIndex: 0, repeatMode: repeat, startedAt: Date.now() });
     window.open(youtubeUrl.watch(items[0].videoId), '_blank', 'noopener,noreferrer');
-    void setQueueState({ items, currentIndex: 0, repeatMode: repeat, startedAt: Date.now() });
     setPlaybackDialogNodes(null);
     setSelectedIds(new Set());
   }
@@ -3279,7 +3285,7 @@ export default function App() {
                 ))}
                 <div className="tf-vtable-cell" aria-hidden="true" />
               </div>
-              <div style={{ position: 'relative', height: itemVirtualizer.getTotalSize() }} role="rowgroup">
+              <div className="tf-vtable-body" style={{ position: 'relative', height: itemVirtualizer.getTotalSize() }} role="rowgroup">
                 {itemVirtualizer.getVirtualItems().map((vItem) => {
                   const node = children[vItem.index];
                   const isTrash = node.id === store.trashId;
@@ -3363,6 +3369,7 @@ export default function App() {
                 })}
               </div>
             ) : isTable ? (
+              <div className="tf-table-scroll">
               <table className="tf-table" onContextMenu={(e) => openContextMenu(e, null)}>
                 <thead>
                   <tr>
@@ -3443,6 +3450,7 @@ export default function App() {
                   })}
                 </tbody>
               </table>
+              </div>
             ) : (
               <ul className="tf-list" onContextMenu={(e) => openContextMenu(e, null)}>
                 {children.length === 0 && <li className="tf-empty">비어 있습니다.</li>}

@@ -94,6 +94,17 @@ export function computeNextIndex(state: Pick<PlaybackQueueState, 'items' | 'curr
   return null;
 }
 
+/** 이전으로 되돌아갈 인덱스(2026-09-10, "재생 중에 이전 파일로 되돌아가기" 요청으로 신설) —
+ * computeNextIndex와 대칭. 맨 앞 항목에서 더 되돌아갈 게 없으면(1회재생 모드) null, 무한반복
+ * 모드면 마지막 항목으로 순환. */
+export function computePrevIndex(state: Pick<PlaybackQueueState, 'items' | 'currentIndex' | 'repeatMode'>): number | null {
+  if (state.items.length === 0) return null;
+  const prev = state.currentIndex - 1;
+  if (prev >= 0) return prev;
+  if (state.repeatMode === 'loop') return state.items.length - 1;
+  return null;
+}
+
 /** 지금 보고 있는(재생 중인) 유튜브 페이지가 이 큐의 "현재 항목"과 실제로 일치하는지 확인한다.
  * 사용자가 큐 재생 중간에 직접 다른 영상으로 이동했거나, 탭을 닫았다가 나중에 무관한 영상을 볼 때
  * 저장소에 남아있는 오래된 큐가 엉뚱하게 다음 곡으로 넘기는 사고를 막는 안전장치(2026-09-10

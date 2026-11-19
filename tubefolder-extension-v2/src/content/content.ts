@@ -10,7 +10,9 @@ import { load, getLastImportFolderId, setLastImportFolderId, getOpenFolderId, re
 import { youtubeUrl } from '../shared/youtubeSelectors';
 import { FREE_VIDEO_LIMIT } from '../license/licenseEngine';
 import { DEFAULT_FOLDER_ICON } from '../shared/folderIcons';
-import { getQueueState, setQueueState, computeNextIndex, isCurrentPageInQueue } from '../shared/playbackQueue';
+import { getQueueState, setQueueState, computeNextIndex, computePrevIndex, isCurrentPageInQueue } from '../shared/playbackQueue';
+import type { PlaybackQueueState } from '../shared/playbackQueue';
+import { showQueueWidget, hideQueueWidget } from './queueWidget';
 import type { TubeStoreData } from '../storage/types';
 import type { BackgroundToContentMessage, FetchPlaylistDataApiResponse } from '../shared/messages';
 
@@ -76,11 +78,55 @@ export async function handleQueueVideoEnded(): Promise<void> {
   const nextIndex = computeNextIndex(state!);
   if (nextIndex === null) {
     await setQueueState(null);
+    hideQueueWidget(); // 더 재생할 게 없어 큐가 끝났으므로(1회재생 모드) 이전/다음 위젯도 함께 치운다
     return;
   }
   const nextItem = state!.items[nextIndex];
   await setQueueState({ ...state!, currentIndex: nextIndex });
   window.location.href = youtubeUrl.watch(nextItem.videoId);
+}
+
+/** "⏮ 이전"/"다음 ⏭" 위젯 버튼 클릭 — handleQueueVideoEnded와 달리 영상이 실제로 끝난 게 아니라
+ * 사용자가 수동으로 건너뛴 것이므로, 더 갈 곳이 없어도(null) 큐를 지우지 않고 조용히 아무 일도
+ * 하지 않는다(버튼은 이미 비활성화돼 있어야 하지만, 이중 안전장치). */
+async function handleManualSkip(direction: 'next' | 'prev'): Promise<void> {
+  const state = await getQueueState();
+  const currentVideoId = extractCurrentVideoId(window.location.href);
+  if (!isCurrentPageInQueue(state, currentVideoId)) return;
+
+  const targetIndex = direction === 'next' ? computeNextIndex(state!) : computePrevIndex(state!);
+  if (targetIndex === null) return;
+  const targetItem = state!.items[targetIndex];
+  await setQueueState({ ...state!, currentIndex: targetIndex });
+  window.location.href = youtubeUrl.watch(targetItem.videoId);
+}
+
+/** 위젯의 "✕"(재생목록 끄기) — 큐를 지우고 위젯을 치운다. 지금 재생 중인 영상 자체는 그대로
+ * 계속 보되, 다음부터는 자동/수동 다음 곡 넘김이 더 이상 동작하지 않게 된다. */
+async function stopQueue(): Promise<void> {
+  await setQueueState(null);
+  hideQueueWidget();
+}
+
+/** 현재 큐 상태를 바탕으로 이전/다음 위젯을 그린다(또는 이미 떠 있으면 최신 상태로 다시 그린다). */
+function renderQueueWidgetForState(state: PlaybackQueueState): void {
+  showQueueWidget(
+    {
+      position: state.currentIndex + 1,
+      total: state.items.length,
+      canPrev: computePrevIndex(state) !== null,
+      canNext: computeNextIndex(state) !== null
+    },
+    () => {
+      void handleManualSkip('prev');
+    },
+    () => {
+      void handleManualSkip('next');
+    },
+    () => {
+      void stopQueue();
+    }
+  );
 }
 
 /** 실제 <video> 엘리먼트가 DOM에 나타날 때까지 기다렸다가 'ended' 리스너를 한 번만 붙인다.
@@ -111,6 +157,7 @@ async function initPlaybackQueueWatcher(): Promise<void> {
   if (!currentVideoId) return;
   const state = await getQueueState();
   if (!isCurrentPageInQueue(state, currentVideoId)) return;
+  renderQueueWidgetForState(state!);
   watchForVideoEnded(() => {
     handleQueueVideoEnded().catch(() => {
       // 다음 곡 이동이 실패해도(저장소 접근 실패 등) 지금 보고 있는 영상 재생 자체는 멀쩡하므로

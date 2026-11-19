@@ -1122,6 +1122,31 @@ select:focus-visible {
   padding: 6px 8px;
 }
 
+/* 좁은 화면(휴대폰 PWA 등)에서 표(자세히) 보기 가로 넘침 방지(2026-10-06, 휴대폰 폭 375~430px 검증 중
+   발견: 표의 열 고정폭 합이 약 900px라 화면보다 넓어져 페이지 전체가 가로로 밀렸음). 표 자체를 가로
+   스크롤 컨테이너로 감싸 "표 안에서만" 좌우 스크롤되게 한다. 사이드바가 나오는 넓은 화면(860px 이상)에서는
+   기존 동작을 그대로 유지하도록 @media로 좁은 화면에만 적용한다(넓은 화면에 적용하면 사이드바 때문에 본문 폭이
+   표 최소폭보다 좁아지는 구간에서 없던 가로 스크롤바가 새로 생김 — 검증 중 확인). 가상 스크롤 표(.tf-vtable)는 헤더와 본문을 같은 최소 폭으로
+   맞춰 같은 스크롤 컨테이너 안에서 열이 어긋나지 않게 한다. */
+@media (max-width: 859px) {
+  .tf-table-scroll {
+    overflow-x: auto;
+  }
+
+  .tf-table-scroll .tf-table {
+    min-width: 860px;
+  }
+
+  .tf-vtable {
+    overflow-x: auto;
+  }
+
+  .tf-vtable-header,
+  .tf-vtable-body {
+    min-width: 860px;
+  }
+}
+
 .tf-vtable-header {
   color: #999;
   font-size: 12px;

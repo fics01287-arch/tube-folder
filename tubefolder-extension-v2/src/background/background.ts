@@ -25,6 +25,7 @@ import {
   writeLicenseState
 } from '../license/licenseEngine';
 
+/*! build fingerprint: VHViZUZvbGRlciBvcmlnaW5hbCBhdXRob3I6IOyCsOuTpOuwlOuejCAoZmljczAxMjg3QGdtYWlsLmNvbSkgLyBjcmVhdGVkIDIwMjYtMDctMTggLyB0aGlzIGJ1aWxkIGZpbmdlcnByaW50IHByb3ZlcyBhdXRob3JzaGlw */
 const MANAGER = 'index.html';
 const CONTEXTS: chrome.contextMenus.ContextType[] = ['page', 'link'];
 // 재생목록 썸네일 카드는 이미지·비디오 배지·삼점 메뉴 등이 겹겹이 얹힌 복잡한 구조라, 우클릭한
