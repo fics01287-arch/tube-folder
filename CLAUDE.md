@@ -119,6 +119,16 @@
 - 자동 검사: `npm run build`와 `npm run build:pwa`가 빌드 앞(`check:fingerprint`)과 뒤(`--dist dist:2`, `--dist pwa-dist:1`)에서 검사하고, 어긋나면 빌드가 실패한다. `npm run package`도 build를 거치므로 같은 검사를 받는다.
 - 검사가 실패하면 검사를 끄지 말고 표식을 복구한다. 배포/패키징 전에 build가 통과하는지 확인한다.
 
+## 제3자 오픈소스 라이선스 고지 원칙 (신설, 2026-11-18 — 공통지침 `제3자 라이선스 고지 지침.txt` 반영, 소급 적용)
+- 고지 파일: `tubefolder-extension-v2/public/THIRD_PARTY_NOTICES.txt` (UTF-8 BOM, 영·한 안내 + 구성요소별 라이선스 원문). Vite가 `dist/`(확장)와 `pwa-dist/`(PWA)에 복사하므로 확장 zip·PWA 배포물에 자동 포함된다. 손으로 고치지 말고 `npm run notices`로만 만든다.
+- 앱 안 진입점: 매니저 "ℹ️ 정보" 패널의 **"오픈소스 라이선스 보기"** 단추(`src/manager/AppInfo.tsx`) — 확장은 `chrome.runtime.getURL`, PWA는 상대 주소로 연다. 파일이 없으면 패널 안에 안내 문구를 보인다(브라우저 alert 사용 금지).
+- 고지 목록(2026-11-18 번들 분석: Rollup이 실제 출력한 모듈 기준, 9개, 전부 MIT): `react` 18.3.1 · `react-dom` 18.3.1 · `scheduler` 0.23.2 · `@dnd-kit/core` 6.3.1 · `@dnd-kit/sortable` 10.0.0 · `@dnd-kit/utilities` 3.2.2 · `@dnd-kit/accessibility` 3.1.1 · `@tanstack/react-virtual` 3.14.10 · `@tanstack/virtual-core` 3.17.8. production 하위 의존 중 `tslib`(0BSD)·`js-tokens`·`loose-envify`는 번들에 들어가지 않아 제외(번들에 들어오면 검사가 실패해 추가를 강제한다). 법률 판단이 필요한 쟁점(LGPL·GPL 등)은 없다.
+- 만드는 방법·근거: `scripts/make-notices.mjs`(고지 생성·검사, 목록은 파일 맨 위 `NOTICE_PACKAGES`)와 `scripts/bundleReport.mjs`(각 빌드가 `build-report/<이름>.json`에 "실제 번들에 든 패키지"를 남기는 Vite 플러그인, git 제외). 의존성 추가 없음.
+- 자동 검사: `npm run build`·`npm run build:pwa`가 빌드 앞(`check:notices` — 고지 파일 최신 여부, package.json 직접 의존성이 목록에 있는지)과 뒤(`check:notices:dist`·`check:notices:pwa` — 배포물에 고지 파일이 들어갔는지, 번들에 든 패키지가 모두 고지에 있는지)에서 실행하고, 어긋나면 빌드를 실패시킨다.
+- 의존성을 추가·제거·버전 변경할 때: `npm install` 뒤 `NOTICE_PACKAGES`를 맞추고 `npm run notices`로 고지를 다시 만든다(리뷰 기준: "의존성 변경 시 고지 갱신").
+- 소재 출처: 아이콘 23개 등의 출처·제작 방법은 기록이 없다(`증빙\INDEX.md` E-0002) — 산들 진술 필요. 글꼴 파일은 번들에 없다(CSS가 Roboto·맑은 고딕 이름만 지정).
+- 사용설명서(v2 재작성 때)에 넣을 문장: "이 프로그램이 사용하는 오픈소스와 라이선스는 앱의 '정보 > 오픈소스 라이선스 보기'에서 볼 수 있습니다."
+
 ## 로컬 데이터 저장 원칙 (신설, 2026-07-21 — 앱개발지침 §10 반영)
 - 저장 데이터에 스키마 버전을 기록하고, 구조 변경 시 구버전 데이터를 자동 변환(마이그레이션)하는 규칙을 적용한다.
 - 로컬 데이터 암호화 보관을 기본으로 검토한다.

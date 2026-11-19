@@ -12,8 +12,12 @@
     "build:content": "vite build --config vite.content.config.ts",
     "check:fingerprint": "node scripts/check-fingerprint.mjs",
     "check:fingerprint:dist": "node scripts/check-fingerprint.mjs --dist dist:2",
-    "build": "npm run check:fingerprint && npm run typecheck && npm run build:manager && npm run build:background && npm run build:content && npm run check:fingerprint:dist",
-    "build:pwa": "npm run check:fingerprint && npm run typecheck && vite build --config vite.pwa.config.ts && node scripts/rename-pwa-entry.mjs && node scripts/check-fingerprint.mjs --dist pwa-dist:1",
+    "notices": "node scripts/make-notices.mjs",
+    "check:notices": "node scripts/make-notices.mjs --check",
+    "check:notices:dist": "node scripts/make-notices.mjs --check --dist dist:manager,background,content",
+    "check:notices:pwa": "node scripts/make-notices.mjs --check --dist pwa-dist:pwa",
+    "build": "npm run check:fingerprint && npm run check:notices && npm run typecheck && npm run build:manager && npm run build:background && npm run build:content && npm run check:fingerprint:dist && npm run check:notices:dist",
+    "build:pwa": "npm run check:fingerprint && npm run check:notices && npm run typecheck && vite build --config vite.pwa.config.ts && node scripts/rename-pwa-entry.mjs && node scripts/check-fingerprint.mjs --dist pwa-dist:1 && npm run check:notices:pwa",
     "package": "npm run build && powershell -NoProfile -Command \"Compress-Archive -Path dist/* -DestinationPath ../tubefolder-extension-v2.zip -Force\""
   },
   "dependencies": {

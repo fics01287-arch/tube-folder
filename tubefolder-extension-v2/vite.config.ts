@@ -5,6 +5,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { bundleReportPlugin } from './scripts/bundleReport.mjs';
 
 // 매니저 페이지(React) 빌드 — index.html 진입점.
 // public/ 아래 manifest.json·icons는 Vite가 자동으로 dist/에 복사한다.
@@ -21,7 +22,7 @@ function getLastCommitDate(): string {
 const pkgVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')).version as string;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), bundleReportPlugin('manager')],
   define: {
     __TF_LAST_MODIFIED__: JSON.stringify(getLastCommitDate()),
     __TF_VERSION__: JSON.stringify(pkgVersion)

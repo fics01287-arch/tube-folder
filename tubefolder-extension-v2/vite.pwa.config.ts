@@ -5,6 +5,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { bundleReportPlugin } from './scripts/bundleReport.mjs';
 
 // 독립 PWA(휴대폰 매니저) 빌드 — index.pwa.html 진입점, 크롬 확장 매니저 빌드(vite.config.ts)와는
 // 별개 산출물(pwa-dist/)이다. GitHub Pages 등 하위 경로 배포를 위해 base를 상대경로로 지정.
@@ -23,7 +24,7 @@ function getLastCommitDate(): string {
 const pkgVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')).version as string;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), bundleReportPlugin('pwa')],
   base: './',
   define: {
     __TF_LAST_MODIFIED__: JSON.stringify(getLastCommitDate()),
