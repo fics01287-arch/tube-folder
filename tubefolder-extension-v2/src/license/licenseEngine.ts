@@ -33,7 +33,7 @@ import { APPROVED_LICENSES } from './approvedLicenses';
  * 이미 설치된 확장에 즉시 반영되는 "실시간 스위치"가 필요하면 별도 설계(원격 설정 파일 등)가
  * 필요하며, 그 경우 새로운 네트워크 호출·보안 검토가 추가로 필요하므로 별도 승인 후 진행한다.
  */
-export const FREE_DISTRIBUTION_MODE = false;
+export const FREE_DISTRIBUTION_MODE = true;
 
 /** 결제 페이지(웹사이트) URL — 구매자 이메일을 ?email= 쿼리로 붙여서 새 탭으로 연다.
  *  (2026-08-30, 호스티드 체크아웃 → 웹사이트 오버레이 체크아웃 전환) 예전엔 이 값이 Paddle 도메인의
