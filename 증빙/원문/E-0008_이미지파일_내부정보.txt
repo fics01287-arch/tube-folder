@@ -1,0 +1,18 @@
+E-0008 이미지 파일 내부 정보 확인 (Claude 확인, 2026-11-22 13:5x KST). PNG 파일 안의 보조 정보(chunk)와 파일 수정 시각만 읽은 사실이다. 이 정보만으로는 누가 만들었는지 가릴 수 없다.
+
+tubefolder-extension-v1/icons/icon512.png: 512x512, 보조 chunk=['sRGB', 'gAMA', 'pHYs'], 파일 수정 시각(UTC)=2026-06-22 15:27, 크기=5030B
+tubefolder-extension-v2/public/icons/icon512.png: 512x512, 보조 chunk=['bKGD'], 파일 수정 시각(UTC)=2026-08-23 07:58, 크기=24867B
+store-screenshot-1-folders-v2.png: 1280x800, 보조 chunk=없음, 파일 수정 시각(UTC)=2026-08-23 08:26, 크기=279120B
+store-screenshot-1-folders.png: 1280x800, 보조 chunk=없음, 파일 수정 시각(UTC)=2026-08-23 08:23, 크기=281975B
+store-screenshot-2-contextmenu-v2.png: 1280x800, 보조 chunk=없음, 파일 수정 시각(UTC)=2026-08-23 10:28, 크기=1335035B
+store-screenshot-2-contextmenu.png: 1280x800, 보조 chunk=없음, 파일 수정 시각(UTC)=2026-08-23 08:55, 크기=1363857B
+스크린샷 2026-08-23 172500.png: 1281x727, 보조 chunk=['sRGB', 'gAMA', 'pHYs'], 파일 수정 시각(UTC)=2026-08-23 08:25, 크기=220732B
+스크린샷 2026-08-23 175459.png: 1816x1095, 보조 chunk=['sRGB', 'gAMA', 'pHYs'], 파일 수정 시각(UTC)=2026-08-23 08:54, 크기=2489936B
+스크린샷 2026-08-23 192719.png: 1823x1089, 보조 chunk=['sRGB', 'gAMA', 'pHYs'], 파일 수정 시각(UTC)=2026-08-23 10:27, 크기=2458873B
+Claude outputs/screenshot_navbtns.png: 780x500, 보조 chunk=없음, 파일 수정 시각(UTC)=2026-09-03 08:30, 크기=54068B
+
+[읽는 법 — Claude의 정리, 단정 아님]
+- 산들의 윈도우 화면 캡처 이름 형식("스크린샷 2026-08-23 …") 3장은 sRGB·gAMA·pHYs chunk를 가진다. v1 icon512.png도 같은 세 chunk를 가진다. v2 icon512.png는 bKGD 하나뿐이다.
+- 스토어 이미지 4개와 screenshot_navbtns.png는 보조 chunk가 없다(스크립트나 변환 도구로 저장된 PNG에서 흔하나, 이것만으로 제작 주체를 가릴 수 없다).
+- 어떤 파일에도 제작 도구·작성자를 적은 텍스트 정보(tEXt 등)는 없다.
+- 이 확인은 "누가 만들었나"를 입증하거나 반박하지 못한다. 제작 주체에 관한 근거는 E-0005·E-0007의 산들 진술과 E-0006의 기록 발췌뿐이다.
